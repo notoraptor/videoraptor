@@ -1,0 +1,7 @@
+*.json
+*.exe
+cmake-build-*
+ffmpeg
+.local
+.idea
+
