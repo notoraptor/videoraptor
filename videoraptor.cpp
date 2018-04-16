@@ -26,15 +26,13 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <fstream>
-#include <algorithm>
 
 using namespace std;
 
-void replaceString(std::string &member, const char *from, const char *to) {
+inline void replaceString(std::string &member, const char *from, const char *to) {
 	size_t from_len = strlen(from);
 	size_t to_len = strlen(to);
 	size_t pos = 0;
@@ -47,7 +45,7 @@ void replaceString(std::string &member, const char *from, const char *to) {
 	} while (pos != std::string::npos);
 }
 
-void stripString(std::string &s) {
+inline void stripString(std::string &s) {
 	size_t stripLeft = std::string::npos;
 	for (size_t i = 0; i < s.length(); ++i) {
 		if (!std::isspace(s[i])) {
@@ -69,26 +67,27 @@ void stripString(std::string &s) {
 	}
 }
 
-std::string encodeHex(const std::string &s) {
+inline std::string encodeHex(const std::string &s) {
 	static const char *const digits = "0123456789ABCDEF";
 	size_t n_bytes = s.length();
 	std::string out(2 * n_bytes, '0');
 	for (size_t i = 0; i < n_bytes; ++i) {
-		char c = s[i];
+		unsigned char c = s[i];
 		out[2 * i] = digits[c >> 4];
 		out[2 * i + 1] = digits[c & (((unsigned int) 1 << 4) - 1)];
 	}
 	return out;
 }
 
-std::string jsonString(const char *inputString) {
+inline std::string jsonString(const char *inputString) {
 	std::string forJson(inputString);
 	replaceString(forJson, "\"", "\\\"");
+	// replaceString(forJson, "'", "\\'");
 	replaceString(forJson, "\\", "\\\\");
 	return forJson;
 }
 
-bool extensionIsTxt(const char *s) {
+inline bool extensionIsTxt(const char *s) {
 	size_t len = strlen(s);
 	return len >= 4 && s[len - 4] == '.' && (s[len - 3] == 't' || s[len - 3] == 'T')
 		   && (s[len - 2] == 'x' || s[len - 2] == 'X') && (s[len - 1] == 't' || s[len - 1] == 'T');
@@ -111,7 +110,7 @@ struct VideoInfo {
 	int videoStreamIndex;
 
 	bool error(const char *message) {
-		cout << "##ERROR[" << filename << "] " << message << endl;
+		cerr << "##ERROR[" << filename << "] " << message << endl;
 		return false;
 	}
 
@@ -243,24 +242,27 @@ int main(int argc, char *argv[]) {
 		cerr << "# Given a TXT file." << endl;
 		std::ifstream textFile(argv[1]);
 		std::string line;
-		bool first = true;
+		size_t count = 0;
 		cout << '[';
 		while (std::getline(textFile, line)) {
 			stripString(line);
 			if (line.length() && line[0] != '#') {
 				VideoInfo videoInfo;
 				if (videoInfo.load(line.c_str())) {
-					videoInfo.printJSON(first);
-					first = false;
+					videoInfo.printJSON(!count);
+					++count;
+					if (count % 25 == 0)
+						cerr << "# [" << argv[1] << "] Loaded " << count << " videos." << endl;
 				}
 			}
 		}
 		cout << ']' << endl;
+		cerr << "# [" << argv[1] << "] Finished loading " << count << " videos." << endl;
 	} else {
-		cerr << "# Given 1 movie file path." << endl;
+		cerr << "# [" << argv[1] << "] Given 1 movie file path." << endl;
 		VideoInfo videoInfo;
 		if (videoInfo.load(argv[1]))
-			videoInfo.printJSON();
+			videoInfo.printJSON(true);
 	}
 
 	return 0;
