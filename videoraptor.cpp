@@ -39,20 +39,12 @@ extern "C" {
 #include <iostream>
 #include <fstream>
 
-using namespace std;
+// using namespace std;
 
 const char* const digits = "0123456789ABCDEF";
 
 const std::string* currentFilenamePtr = nullptr;
 char currentMessage[2048] = {};
-
-void custom_callback(void* avcl, int level, const char* fmt, va_list vl) {
-	if (level < av_log_get_level() && currentFilenamePtr) {
-		vsnprintf(currentMessage, sizeof(currentMessage), fmt, vl);
-		cerr << "#VIDEO_WARNING[" << *currentFilenamePtr << "]" << currentMessage << endl;
-	}
-	// av_log_default_callback(avcl, level, fmt, vl);
-}
 
 inline void replaceString(std::string& member, const char* from, const char* to) {
 	size_t from_len = strlen(from);
@@ -65,6 +57,17 @@ inline void replaceString(std::string& member, const char* from, const char* to)
 			pos += to_len;
 		}
 	} while (pos != std::string::npos);
+}
+
+void custom_callback(void* avcl, int level, const char* fmt, va_list vl) {
+	if (level < av_log_get_level() && currentFilenamePtr) {
+		vsnprintf(currentMessage, sizeof(currentMessage), fmt, vl);
+		for (char& character: currentMessage) {
+			if (character == '\r' || character == '\n')
+				character = ' ';
+		}
+		std::cout << "#VIDEO_WARNING[" << *currentFilenamePtr << "]" << currentMessage << std::endl;
+	}
 }
 
 inline void stripString(std::string& s) {
@@ -101,7 +104,7 @@ struct HexEncoder {
 	explicit HexEncoder(const char* inputString): str(inputString) {}
 };
 
-inline ostream& operator<<(ostream& o, const HexEncoder& hexEncoder) {
+inline std::ostream& operator<<(std::ostream& o, const HexEncoder& hexEncoder) {
 	const char* str = hexEncoder.str;
 	o << '"';
 	while (*str) {
@@ -118,10 +121,10 @@ struct CStringToJson {
 
 	explicit CStringToJson(const char* inputString): str(inputString) {}
 
-	explicit CStringToJson(const string& inputString): str(inputString.c_str()) {}
+	explicit CStringToJson(const std::string& inputString): str(inputString.c_str()) {}
 };
 
-inline ostream& operator<<(ostream& o, const CStringToJson& cStringToJson) {
+inline std::ostream& operator<<(std::ostream& o, const CStringToJson& cStringToJson) {
 	std::string outputString(cStringToJson.str);
 	replaceString(outputString, "\"", "\\\"");
 	replaceString(outputString, "\\", "\\\\");
@@ -146,7 +149,7 @@ struct VideoInfo {
 	int videoStreamIndex;
 
 	bool error(const char* message) {
-		cerr << "#VIDEO_ERROR[" << filename << "]" << message << endl;
+		std::cout << "#VIDEO_ERROR[" << filename << "]" << message << std::endl;
 		return false;
 	}
 
@@ -213,41 +216,40 @@ public:
 		return true;
 	}
 
-	void printJSON(bool isNext = true) {
-		/** Print information. **/
-		AVRational* frame_rate = &videoStream.stream->avg_frame_rate;
-		if (!frame_rate->den)
-			frame_rate = &videoStream.stream->r_frame_rate;
-		if (isNext)
-			cout << ',' << endl;
-		cout << '{';
-		cout << R"("filename":)" << CStringToJson(filename) << ',' << endl;
-		cout << R"("duration":)" << format->duration << ',' << endl;
-		cout << R"("duration_time_base":)" << AV_TIME_BASE << ',' << endl;
-		cout << R"("size":)" << avio_size(format->pb) << ',' << endl;
-		cout << R"("container_format":)" << CStringToJson(format->iformat->long_name) << ',' << endl;
-		cout << R"("width":)" << videoStream.codecContext->width << ',' << endl;
-		cout << R"("height":)" << videoStream.codecContext->height << ',' << endl;
-		cout << R"("video_codec":)" << CStringToJson(videoStream.codec->long_name) << ',' << endl;
-		cout << R"("frame_rate":")" << frame_rate->num << '/' << frame_rate->den << '"';
-		if (audioStreamIndex >= 0) {
-			cout << ',' << endl;
-			cout << R"("audio_codec":)" << CStringToJson(audioStream.codec->long_name) << ',' << endl;
-			cout << R"("sample_rate":)" << audioStream.codecContext->sample_rate << ',' << endl;
-			cout << R"("bit_rate":)" << audioStream.codecContext->bit_rate;
-		}
-		AVDictionaryEntry* tag = av_dict_get(format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX);
-		if (tag) {
-			cout << ',' << endl << R"("title":)" << HexEncoder(tag->value);
-		}
-		cout << '}';
+	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& v);
+};
+
+std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
+	AVRational* frame_rate = &videoInfo.videoStream.stream->avg_frame_rate;
+	if (!frame_rate->den)
+		frame_rate = &videoInfo.videoStream.stream->r_frame_rate;
+	o << '{';
+	o << R"("filename":)" << CStringToJson(videoInfo.filename) << ',';
+	o << R"("duration":)" << videoInfo.format->duration << ',';
+	o << R"("duration_time_base":)" << AV_TIME_BASE << ',';
+	o << R"("size":)" << avio_size(videoInfo.format->pb) << ',';
+	o << R"("container_format":)" << CStringToJson(videoInfo.format->iformat->long_name) << ',';
+	o << R"("width":)" << videoInfo.videoStream.codecContext->width << ',';
+	o << R"("height":)" << videoInfo.videoStream.codecContext->height << ',';
+	o << R"("video_codec":)" << CStringToJson(videoInfo.videoStream.codec->long_name) << ',';
+	o << R"("frame_rate":")" << frame_rate->num << '/' << frame_rate->den << '"';
+	if (videoInfo.audioStreamIndex >= 0) {
+		o << ',';
+		o << R"("audio_codec":)" << CStringToJson(videoInfo.audioStream.codec->long_name) << ',';
+		o << R"("sample_rate":)" << videoInfo.audioStream.codecContext->sample_rate << ',';
+		o << R"("bit_rate":)" << videoInfo.audioStream.codecContext->bit_rate;
 	}
+	AVDictionaryEntry* tag = av_dict_get(videoInfo.format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX);
+	if (tag)
+		o << ',' << R"("title":)" << HexEncoder(tag->value);
+	o << '}';
+	return o;
 };
 
 int main(int argc, char* argv[]) {
 	// Check if there are arguments.
 	if (argc < 2) {
-		cerr << "#ERROR Please provide a movie file path or a TXT file containing a list of movie file paths.";
+		std::cout << "#ERROR Please provide a movie file path or a TXT file containing a list of movie file paths.";
 		return -1;
 	}
 	// Register all formats and codecs
@@ -255,32 +257,30 @@ int main(int argc, char* argv[]) {
 	av_log_set_callback(custom_callback);
 	// Parse arguments.
 	if (extensionIsTxt(argv[1])) {
-		cerr << "#MESSAGE Given a TXT file." << endl;
+		std::cout << "#MESSAGE Given a TXT file." << std::endl;
 		std::ifstream textFile(argv[1]);
 		std::string line;
 		size_t count = 0;
-		cout << '[';
 		while (std::getline(textFile, line)) {
 			stripString(line);
 			if (line.length() && line[0] != '#') {
 				VideoInfo videoInfo;
 				if (videoInfo.load(line.c_str())) {
-					videoInfo.printJSON((bool) count);
+					std::cout << videoInfo << std::endl;
 					++count;
 					if (count % 25 == 0)
-						cerr << "#LOADED " << count << endl;
+						std::cout << "#LOADED " << count << std::endl;
 				} else {
-					cerr << "#IGNORED " << line << endl;
+					std::cout << "#IGNORED " << line << std::endl;
 				}
 			}
 		}
-		cout << ']' << endl;
-		cerr << "#FINISHED " << count << endl;
+		std::cout << "#FINISHED " << count << std::endl;
 	} else {
-		cerr << "#MESSAGE Given 1 movie file path." << endl;
+		std::cout << "#MESSAGE Given 1 movie file path." << std::endl;
 		VideoInfo videoInfo;
 		if (videoInfo.load(argv[1]))
-			videoInfo.printJSON(false);
+			std::cout << videoInfo << std::endl;
 	}
 
 	return 0;
