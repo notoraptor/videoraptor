@@ -34,7 +34,6 @@ extern "C" {
 #include <libswscale/swscale.h>
 #include <libavutil/log.h>
 }
-
 #include <cstring>
 #include <iostream>
 #include <fstream>
@@ -140,13 +139,13 @@ struct StreamInfo {
 	StreamInfo(): stream(nullptr), codecContext(nullptr), codec(nullptr) {}
 };
 
-struct VideoInfo {
+class VideoInfo {
 	std::string filename;
 	AVFormatContext* format;
 	StreamInfo audioStream;
 	StreamInfo videoStream;
-	int audioStreamIndex;
-	int videoStreamIndex;
+	int audioIndex; // audio stream index
+	int videoIndex; // video stream index
 
 	bool error(const char* message) {
 		std::cout << "#VIDEO_ERROR[" << filename << "]" << message << std::endl;
@@ -169,8 +168,7 @@ struct VideoInfo {
 	}
 
 public:
-	VideoInfo(): filename(), format(nullptr), audioStream(), videoStream(),
-				 audioStreamIndex(-1), videoStreamIndex(-1) {}
+	VideoInfo(): filename(), format(nullptr), audioStream(), videoStream(), audioIndex(-1), videoIndex(-1) {}
 
 	~VideoInfo() {
 		if (format) {
@@ -197,26 +195,26 @@ public:
 			return error("Unable to get streams info.");
 		// Find first video stream and audio stream
 		for (int i = 0; i < format->nb_streams; ++i) {
-			if (videoStreamIndex < 0 || audioStreamIndex < 0) {
+			if (videoIndex < 0 || audioIndex < 0) {
 				if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-					if (videoStreamIndex < 0)
-						videoStreamIndex = i;
+					if (videoIndex < 0)
+						videoIndex = i;
 				} else if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-					if (audioStreamIndex < 0)
-						audioStreamIndex = i;
+					if (audioIndex < 0)
+						audioIndex = i;
 				}
 			}
 		}
-		if (videoStreamIndex == -1)
+		if (videoIndex == -1)
 			return error("Unable to find a video stream.");
-		if (!getStreamInfo(videoStreamIndex, &videoStream))
+		if (!getStreamInfo(videoIndex, &videoStream))
 			return error("Unable to load video stream.");
-		if (audioStreamIndex >= 0 && !getStreamInfo(audioStreamIndex, &audioStream))
+		if (audioIndex >= 0 && !getStreamInfo(audioIndex, &audioStream))
 			return error("Unable to load audio stream.");
 		return true;
 	}
 
-	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& v);
+	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo);
 };
 
 std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
@@ -233,7 +231,7 @@ std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
 	o << R"("height":)" << videoInfo.videoStream.codecContext->height << ',';
 	o << R"("video_codec":)" << CStringToJson(videoInfo.videoStream.codec->long_name) << ',';
 	o << R"("frame_rate":")" << frame_rate->num << '/' << frame_rate->den << '"';
-	if (videoInfo.audioStreamIndex >= 0) {
+	if (videoInfo.audioIndex >= 0) {
 		o << ',';
 		o << R"("audio_codec":)" << CStringToJson(videoInfo.audioStream.codec->long_name) << ',';
 		o << R"("sample_rate":)" << videoInfo.audioStream.codecContext->sample_rate << ',';
