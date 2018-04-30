@@ -24,43 +24,131 @@
 
 #include <stdio.h>
 
-void SaveFrame(AVFrame* pFrame, int width, int height, int iFrame) {
-	FILE* pFile;
-	char szFilename[32];
-	int y;
+int savePNG(AVFrame* frame, int width, int height) {
+	AVPacket pkt;
+	AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_PNG);
+	if (!codec) {
+		printf("Codec not found\n");
+		return 0;
+	}
+	AVCodecContext* c = avcodec_alloc_context3(codec);
+	if (!c) {
+		printf("Could not allocate video codec context\n");
+		return 0;
+	}
+	c->time_base = (AVRational) {1, 25};
+	c->width = width;
+	c->height = height;
+	c->pix_fmt = AV_PIX_FMT_RGB24;
+	if (avcodec_open2(c, codec, NULL) < 0) {
+		printf("Could not open codec\n");
+		return 0;
+	}
+	av_init_packet(&pkt);
+	pkt.data = NULL;
+	pkt.size = 0;
+	if (avcodec_send_frame(c, frame) < 0) {
+		printf("Error sending frame\n");
+		return 0;
+	}
+	if (avcodec_receive_packet(c, &pkt) < 0) {
+		printf("Error receiving packet\n");
+		return 0;
+	}
+	FILE* f = fopen("x.png", "wb");
+	fwrite(pkt.data, 1, pkt.size, f);
+	av_packet_unref(&pkt);
+	avcodec_close(c);
+	av_free(c);
+	return 1;
+}
 
-	// Open file
-	sprintf(szFilename, "frame%d.ppm", iFrame);
-	pFile = fopen(szFilename, "wb");
-	if (pFile == NULL)
-		return;
+int generateThumbnail(AVFormatContext* pFormatCtx, AVCodecContext* pCodecCtx, int videoStreamIndex) {
+	AVFrame* pFrame = NULL;
+	AVFrame* pFrameRGB = NULL;
+	uint8_t* buffer = NULL;
+	struct SwsContext* sws_ctx = NULL;
+	AVPacket packet;
 
-	// Write header
-	fprintf(pFile, "P6\n%d %d\n255\n", width, height);
+	int numBytes;
+	int saved = 0;
+	int align = 32;
 
-	// Write pixel data
-	for (y = 0; y < height; y++)
-		fwrite(pFrame->data[0] + y * pFrame->linesize[0], 1, width * 3, pFile);
+	// Allocate video frame
+	pFrame = av_frame_alloc();
+	if (pFrame == NULL)
+		return -1;
 
-	// Close file
-	fclose(pFile);
+	// Allocate an AVFrame structure
+	pFrameRGB = av_frame_alloc();
+	if (pFrameRGB == NULL)
+		return -2;
+
+	// Determine required buffer size and allocate buffer
+	numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, align);
+	buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
+	if (!buffer)
+		return -3;
+
+	sws_ctx = sws_getContext(
+			pCodecCtx->width, pCodecCtx->height, pCodecCtx->pix_fmt,
+			pCodecCtx->width, pCodecCtx->height, AV_PIX_FMT_RGB24,
+			SWS_BILINEAR, NULL, NULL, NULL
+	);
+
+	// Assign appropriate parts of buffer to image planes in pFrameRGB
+	av_image_fill_arrays(pFrameRGB->data, pFrameRGB->linesize, buffer,
+						 AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, align);
+
+	// seek
+	if (av_seek_frame(pFormatCtx, -1, pFormatCtx->duration / 2, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
+		return -4;
+
+	// Read frames and save first video frame as image to disk
+	while (!saved && av_read_frame(pFormatCtx, &packet) >= 0) {
+		// Is this a packet from the video stream?
+		if (packet.stream_index == videoStreamIndex) {
+			// Decode video frame
+			int ret = avcodec_send_packet(pCodecCtx, &packet);
+			if (ret < 0)
+				return -5;
+			ret = avcodec_receive_frame(pCodecCtx, pFrame);
+			if (ret == AVERROR(EAGAIN))
+				continue;
+			if (ret == AVERROR_EOF || ret < 0)
+				return -6;
+			// Convert the image from its native format to RGB
+			sws_scale(sws_ctx, (uint8_t const* const*) pFrame->data, pFrame->linesize, 0, pCodecCtx->height,
+					  pFrameRGB->data, pFrameRGB->linesize);
+			// Save the frame to disk
+			pFrameRGB->width = pCodecCtx->width;
+			pFrameRGB->height = pCodecCtx->height;
+			pFrameRGB->format = AV_PIX_FMT_RGB24;
+			if (!savePNG(pFrameRGB, pCodecCtx->width, pCodecCtx->height))
+				return -7;
+			saved = 1;
+		}
+	}
+
+	if (!saved)
+		return -8;
+
+	// Free buffer and frames
+	av_packet_unref(&packet);
+	av_free(buffer);
+	av_frame_free(&pFrameRGB);
+	av_frame_free(&pFrame);
+
+	return 0;
 }
 
 int main(int argc, char* argv[]) {
 	AVFormatContext* pFormatCtx = NULL;
 	AVCodecContext* pCodecCtx = NULL;
 	AVCodec* pCodec = NULL;
-	AVFrame* pFrame = NULL;
-	AVFrame* pFrameRGB = NULL;
-	AVPacket packet;
-	int videoStream;
-	int numBytes;
-	int align = 32;
-	int saved = 0;
-	uint8_t* buffer = NULL;
 
-	AVDictionary* optionsDict = NULL;
-	struct SwsContext* sws_ctx = NULL;
+	int videoStream;
+
 
 	if (argc < 2) {
 		printf("Please provide a movie file\n");
@@ -112,100 +200,16 @@ int main(int argc, char* argv[]) {
 	if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0)
 		return -1; // Could not open codec
 
-	// Allocate video frame
-	pFrame = av_frame_alloc();
-
-	// Allocate an AVFrame structure
-	pFrameRGB = av_frame_alloc();
-	if (pFrameRGB == NULL)
-		return -1;
-
-	// Determine required buffer size and allocate buffer
-	numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height, align);
-	buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
-	if (!buffer) {
-		fprintf(stderr, "Unable to allocated image buffer.");
-		return -1;
+	// TODO New code starts here.
+	int ret = generateThumbnail(pFormatCtx, pCodecCtx, videoStream);
+	if (ret != 0) {
+		fprintf(stderr, "Error %d\n", ret);
+		return ret;
 	}
 
-	sws_ctx = sws_getContext(
-			pCodecCtx->width,
-			pCodecCtx->height,
-			pCodecCtx->pix_fmt,
-			pCodecCtx->width,
-			pCodecCtx->height,
-			AV_PIX_FMT_RGB24,
-			SWS_BILINEAR,
-			NULL,
-			NULL,
-			NULL
-	);
-
-	// Assign appropriate parts of buffer to image planes in pFrameRGB
-	// Note that pFrameRGB is an AVFrame, but AVFrame is a superset
-	// of AVPicture
-	// avpicture_fill((AVPicture*) pFrameRGB, buffer, PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height);
-	av_image_fill_arrays(pFrameRGB->data, pFrameRGB->linesize,
-						 buffer, AV_PIX_FMT_RGB24,
-						 pCodecCtx->width, pCodecCtx->height, align);
-
-	// seek
-	if (av_seek_frame(pFormatCtx, -1, pFormatCtx->duration / 2, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0) {
-		fprintf(stderr, "Unable to seek.");
-		return -1;
-	}
-
-	// Read frames and save first five frames to disk
-	while (!saved && av_read_frame(pFormatCtx, &packet) >= 0) {
-		// Is this a packet from the video stream?
-		if (packet.stream_index == videoStream) {
-			// Decode video frame
-			int ret = avcodec_send_packet(pCodecCtx, &packet);
-			if (ret < 0) {
-				fprintf(stderr, "Unable to send packet.");
-				return -1;
-			}
-			ret = avcodec_receive_frame(pCodecCtx, pFrame);
-			if (ret == AVERROR(EAGAIN)) {
-				continue;
-			}
-			if (ret == AVERROR_EOF || ret < 0) {
-				fprintf(stderr, "Unable to receive frame %d %d %d vs %d.", AVERROR(EAGAIN), AVERROR_EOF, AVERROR(EINVAL), ret);
-				return -1;
-			}
-			// Convert the image from its native format to RGB
-			sws_scale(
-					sws_ctx,
-					(uint8_t const* const*) pFrame->data,
-					pFrame->linesize,
-					0,
-					pCodecCtx->height,
-					pFrameRGB->data,
-					pFrameRGB->linesize
-			);
-			// Save the frame to disk
-			SaveFrame(pFrameRGB, pCodecCtx->width, pCodecCtx->height, 1);
-			saved = 1;
-		}
-	}
-
-	if (!saved) {
-		fprintf(stderr, "Nothing saved.");
-		return -1;
-	}
-
-	// Free the RGB image
-	av_free(buffer);
-	av_free(pFrameRGB);
-
-	// Free the YUV frame
-	av_free(pFrame);
-
-	// Close the codec
+	// Close codec and video file
 	avcodec_close(pCodecCtx);
 	avcodec_free_context(&pCodecCtx);
-
-	// Close the video file
 	avformat_close_input(&pFormatCtx);
 
 	return 0;

@@ -1,5 +1,6 @@
 *.json
 *.exe
+*.png
 cmake-build-*
 ffmpeg
 .local
