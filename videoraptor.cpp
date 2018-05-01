@@ -6,7 +6,7 @@
  *   https://www.ffmpeg.org/doxygen/3.4/index.html
  *   (2018/04/29): https://stackoverflow.com/a/12563019
  * #### Compilation command ####
- *   g++ videoraptor.cpp -o videoraptor -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir> -lavcodec -lavformat -lavutil
+ *   g++ videoraptor.cpp -o videoraptor -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir> -lavcodec -lavformat -lavutil -lswscale
  * #### Usage ####
  *   videoraptor <video_file_path>
  * #### Usage notes ####
