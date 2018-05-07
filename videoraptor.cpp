@@ -1,25 +1,25 @@
 /** VideoRaptor: get and print video information using ffmpeg library.
- * #### References ####
- *   (2018/04/15):
- *   https://github.com/mpenkov/ffmpeg-tutorial/blob/master/tutorial01.c
- *   https://github.com/mikeboers/PyAV/blob/develop/av/container/input.pyx
- *   https://www.ffmpeg.org/doxygen/3.4/index.html
+ * #### References
+ *   (2018/04/15): https://github.com/mpenkov/ffmpeg-tutorial/blob/master/tutorial01.c
+ *   (2018/04/15): https://github.com/mikeboers/PyAV/blob/develop/av/container/input.pyx
+ *   (2018/04/15): https://www.ffmpeg.org/doxygen/3.4/index.html
  *   (2018/04/29): https://stackoverflow.com/a/12563019
- * #### Compilation command ####
- *   g++ videoraptor.cpp -o videoraptor -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir> -lavcodec -lavformat -lavutil -lswscale
- * #### Usage ####
- *   videoraptor <video_file_path>
- * #### Usage notes ####
- *   On Windows, you need FFMPEG DLLs: avcodec-*.dll, avformat-*.dll, avutil-*.dll, swresample-*.dll.
+ * #### Compilation command (with ffmpeg 4.0)
+ *   g++ videoraptor.cpp -o videoraptor
+ *   -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir>
+ *   -lavcodec -lavformat -lavutil -lswscale
+ * #### Usage (print help)
+ *   videoraptor
+ * #### Usage notes
+ *   On Windows, you need FFMPEG DLLs: avcodec-*.dll, avformat-*.dll, avutil-*.dll, swresample-*.dll, swscale-*.dll.
  *   Some errors and warnings may be written in stderr:
  *     #ERROR <error_message>
- *     #HELP <error_message>
  *     #FINISHED <integer>
  *     #IGNORED <video_filename>
  *     #LOADED <integer>
  *     #MESSAGE <message>
+ *     #USAGE <help message>
  *     #VIDEO_ERROR[<video_filename>]<error_message>
- *     #VIDEO_THUMBNAIL_ERROR[<video_filename>]<error_message>
  *     #VIDEO_WARNING[<video_filename>]<warning_message>
  * **/
 
@@ -29,41 +29,37 @@ extern "C" {
 #include <libswscale/swscale.h>
 #include <libavutil/log.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
 }
 
 #include <cstring>
 #include <iostream>
 #include <fstream>
 
-#define STR_FOUND(pos) (pos != std::string::npos)
-#define STR_NONE std::string::npos
-
+#ifdef WIN32
+const char separator = '\\', otherSeparator = '/';
+#else
+const char separator = '/', otherSeparator = '\\';
+#endif
 const char* const digits = "0123456789ABCDEF";
-const std::string* currentFilenamePtr = nullptr;
+const char* globalCurrentFilename = nullptr;
+const AVCodec* imageCodec = nullptr;
 
 void customCallback(void* avcl, int level, const char* fmt, va_list vl) {
-	if (level < av_log_get_level() && currentFilenamePtr) {
+	if (level < av_log_get_level() && globalCurrentFilename) {
 		char currentMessage[2048] = {};
 		vsnprintf(currentMessage, sizeof(currentMessage), fmt, vl);
 		for (char& character: currentMessage) {
 			if (character == '\r' || character == '\n')
 				character = ' ';
 		}
-		std::cout << "#VIDEO_WARNING[" << *currentFilenamePtr << "]" << currentMessage << std::endl;
+		std::cout << "#VIDEO_WARNING[" << globalCurrentFilename << "]" << currentMessage << std::endl;
 	}
 }
 
-inline void replaceString(std::string& member, const char* from, const char* to) {
-	size_t from_len = strlen(from);
-	size_t to_len = strlen(to);
-	size_t pos = 0;
-	do {
-		pos = member.find(from, pos);
-		if (pos != std::string::npos) {
-			member.replace(pos, from_len, to);
-			pos += to_len;
-		}
-	} while (pos != std::string::npos);
+inline bool error(const char* filename, const char* message) {
+	std::cout << "#VIDEO_ERROR[" << filename << "]" << message << std::endl;
+	return false;
 }
 
 inline void stripString(std::string& s) {
@@ -94,133 +90,127 @@ inline bool extensionIsTxt(const char* s) {
 		   && (s[len - 2] == 'x' || s[len - 2] == 'X') && (s[len - 1] == 't' || s[len - 1] == 'T');
 }
 
-struct HexEncoder {
-	const char* str;
+enum class EncoderType { HEX, JSON };
 
-	explicit HexEncoder(const char* inputString): str(inputString) {}
+struct StringEncoder {
+	const char* str;
+	EncoderType type;
+
+	explicit StringEncoder(const char* s, EncoderType encoderType): str(s), type(encoderType) {}
 };
 
-struct CStringToJson {
-	const char* str;
-
-	explicit CStringToJson(const char* inputString): str(inputString) {}
-
-	explicit CStringToJson(const std::string& inputString): str(inputString.c_str()) {}
-};
+inline std::ostream& operator<<(std::ostream& o, const StringEncoder& stringEncoder) {
+	o << '"';
+	const char* str = stringEncoder.str;
+	switch (stringEncoder.type) {
+		case EncoderType::HEX:
+			while (*str) {
+				unsigned char c = *str;
+				o << digits[c >> 4] << digits[c & (((unsigned int) 1 << 4) - 1)];
+				++str;
+			}
+			break;
+		case EncoderType::JSON:
+			while (*str) {
+				if (*str == '"')
+					o << "\\\"";
+				else if (*str == '\\')
+					o << "\\\\";
+				else
+					o << *str;
+				++str;
+			}
+			break;
+	}
+	o << '"';
+	return o;
+}
 
 struct StreamInfo {
-	int index; // stream index
+	int index;
 	AVStream* stream;
-	AVCodecContext* codecContext;
 	AVCodec* codec;
+	AVCodecContext* codecContext;
 
-	StreamInfo(): index(-1), stream(nullptr), codecContext(nullptr), codec(nullptr) {}
-};
+	StreamInfo(): index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr) {}
 
-class VideoInfo {
-	AVFormatContext* format;
-	StreamInfo audioStream;
-	StreamInfo videoStream;
-	std::string filename;
-
-	bool thumbnailError(const char* message) {
-		std::cout << "#VIDEO_THUMBNAIL_ERROR[" << filename << "]" << message << std::endl;
-		return false;
-	}
-
-	bool loadStreamInfo(StreamInfo* streamInfo) {
-		streamInfo->stream = format->streams[streamInfo->index];
-		streamInfo->codec = avcodec_find_decoder(streamInfo->stream->codecpar->codec_id);
-		if (!streamInfo->codec)
-			return error("Unable to find codec.");
-		streamInfo->codecContext = avcodec_alloc_context3(streamInfo->codec);
-		if (!streamInfo->codecContext)
-			return error("Unable to alloc codec context.");
-		if (avcodec_parameters_to_context(streamInfo->codecContext, streamInfo->stream->codecpar) < 0)
-			return error("Unable to convert codec parameters to context.");
-		if (avcodec_open2(streamInfo->codecContext, streamInfo->codec, NULL) < 0)
-			return error("Unable to open codec.");
+	bool load(const char* filename, AVFormatContext* format, enum AVMediaType type) {
+		if ((index = av_find_best_stream(format, type, -1, -1, &codec, 0)) < 0)
+			return false;
+		stream = format->streams[index];
+		codecContext = avcodec_alloc_context3(codec);
+		if (!codecContext)
+			return error(filename, "Unable to alloc codec context.");
+		if (avcodec_parameters_to_context(codecContext, stream->codecpar) < 0)
+			return error(filename, "Unable to convert codec parameters to context.");
+		av_opt_set_int(codecContext, "refcounted_frames", 1, 0);
+		if (avcodec_open2(codecContext, codec, NULL) < 0)
+			return error(filename, "Unable to open codec.");
 		return true;
 	}
 
+	void clear() { if (codecContext) avcodec_free_context(&codecContext); }
+};
+
+class VideoInfo {
+	const char* filename;
+	AVFormatContext* format;
+	StreamInfo audioStream;
+	StreamInfo videoStream;
+
 	bool savePNG(AVFrame* frame, const std::string& thumbnailPath) {
 		AVPacket pkt;
-		AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_PNG);
-		if (!codec)
-			return thumbnailError("PNG codec not found.");
-		AVCodecContext* c = avcodec_alloc_context3(codec);
-		if (!c)
-			return thumbnailError("Could not allocate PNG codec context.");
-		c->time_base = (AVRational) {1, 25};
-		c->width = videoStream.codecContext->width;
-		c->height = videoStream.codecContext->height;
-		c->pix_fmt = AV_PIX_FMT_RGB24;
-		if (avcodec_open2(c, codec, NULL) < 0)
-			return thumbnailError("Could not open PNG codec.");
+		AVCodecContext* imageCodecContext = avcodec_alloc_context3(imageCodec);
+		if (!imageCodecContext)
+			return error(filename, "Could not allocate PNG codec context.");
+		imageCodecContext->time_base = (AVRational) {1, 25};
+		imageCodecContext->width = videoStream.codecContext->width;
+		imageCodecContext->height = videoStream.codecContext->height;
+		imageCodecContext->pix_fmt = AV_PIX_FMT_RGB24;
+		if (avcodec_open2(imageCodecContext, imageCodec, NULL) < 0)
+			return error(filename, "Could not open PNG codec.");
 		av_init_packet(&pkt);
 		pkt.data = NULL;
 		pkt.size = 0;
-		if (avcodec_send_frame(c, frame) < 0)
-			return thumbnailError("Error sending frame for PNG encoding.");
-		if (avcodec_receive_packet(c, &pkt) < 0)
-			return thumbnailError("Error receiving packet for PNG encoding.");
+		if (avcodec_send_frame(imageCodecContext, frame) < 0)
+			return error(filename, "Error sending frame for PNG encoding.");
+		if (avcodec_receive_packet(imageCodecContext, &pkt) < 0)
+			return error(filename, "Error receiving packet for PNG encoding.");
 		FILE* f = fopen(thumbnailPath.c_str(), "wb");
+		if (!f) return error(filename, "Unable to open thumbnail file for writing.");
 		fwrite(pkt.data, 1, pkt.size, f);
 		fclose(f);
 		av_packet_unref(&pkt);
-		avcodec_close(c);
-		av_free(c);
+		avcodec_free_context(&imageCodecContext);
 		return true;
 	}
 
 public:
-	VideoInfo(): format(nullptr), audioStream(), videoStream(), filename() {}
+
+	VideoInfo(): filename(nullptr), format(nullptr), audioStream(), videoStream() {}
+
 	~VideoInfo() {
 		if (format) {
-			if (videoStream.codecContext) {
-				avcodec_close(videoStream.codecContext);
-				avcodec_free_context(&videoStream.codecContext);
-			}
-			if (audioStream.codecContext) {
-				avcodec_close(audioStream.codecContext);
-				avcodec_free_context(&audioStream.codecContext);
-			}
+			videoStream.clear();
+			audioStream.clear();
 			avformat_close_input(&format);
 		}
 	}
 
-	bool error(const char* message) {
-		std::cout << "#VIDEO_ERROR[" << filename << "]" << message << std::endl;
-		return false;
-	}
-
 	bool load(const char* videoFilename) {
 		filename = videoFilename;
-		currentFilenamePtr = &filename;
-		// Open video file
+		globalCurrentFilename = filename;
+		// Open video file.
 		if (avformat_open_input(&format, videoFilename, NULL, NULL) != 0)
-			return error("Unable to open file.");
-		// Retrieve stream information
+			return error(filename, "Unable to open file.");
+		// Retrieve stream information.
 		if (avformat_find_stream_info(format, NULL) < 0)
-			return error("Unable to get streams info.");
-		// Find first video stream and audio stream
-		for (int i = 0; i < format->nb_streams; ++i) {
-			if (videoStream.index < 0 || audioStream.index < 0) {
-				if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-					if (videoStream.index < 0)
-						videoStream.index = i;
-				} else if (format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-					if (audioStream.index < 0)
-						audioStream.index = i;
-				}
-			}
-		}
-		if (videoStream.index == -1)
-			return error("Unable to find a video stream.");
-		if (!loadStreamInfo(&videoStream))
-			return error("Unable to load video stream.");
-		if (audioStream.index >= 0 && !loadStreamInfo(&audioStream))
-			return error("Unable to load audio stream.");
+			return error(filename, "Unable to get streams info.");
+		// Load best audio and video streams.
+		if (!videoStream.load(filename, format, AVMEDIA_TYPE_VIDEO))
+			return error(filename, "Unable to load video stream.");
+		if (!audioStream.load(filename, format, AVMEDIA_TYPE_AUDIO) && audioStream.index >= 0)
+			return error(filename, "Unable to load audio stream found in video.");
 		return true;
 	}
 
@@ -238,19 +228,19 @@ public:
 		// Allocate video frame
 		pFrame = av_frame_alloc();
 		if (pFrame == NULL)
-			return thumbnailError("Unable to allocate input frame.");
+			return error(filename, "Unable to allocate input frame.");
 
 		// Allocate an AVFrame structure
 		pFrameRGB = av_frame_alloc();
 		if (pFrameRGB == NULL)
-			return thumbnailError("Unable to allocate output frame.");
+			return error(filename, "Unable to allocate output frame.");
 
 		// Determine required buffer size and allocate buffer
 		numBytes = av_image_get_buffer_size(
 				AV_PIX_FMT_RGB24, videoStream.codecContext->width, videoStream.codecContext->height, align);
 		buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
 		if (!buffer)
-			return thumbnailError("Unable to allocate output frame buffer.");
+			return error(filename, "Unable to allocate output frame buffer.");
 
 		sws_ctx = sws_getContext(
 				videoStream.codecContext->width, videoStream.codecContext->height, videoStream.codecContext->pix_fmt,
@@ -264,8 +254,8 @@ public:
 							 align);
 
 		// seek
-		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
-			return thumbnailError("Unable to seek into video.");
+		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD) < 0)
+			return error(filename, "Unable to seek into video.");
 
 		// Read frames and save first video frame as image to disk
 		while (!saved && av_read_frame(format, &packet) >= 0) {
@@ -274,12 +264,12 @@ public:
 				// Decode video frame
 				int ret = avcodec_send_packet(videoStream.codecContext, &packet);
 				if (ret < 0)
-					return thumbnailError("Unable to send packet for decoding.");
+					return error(filename, "Unable to send packet for decoding.");
 				ret = avcodec_receive_frame(videoStream.codecContext, pFrame);
 				if (ret == AVERROR(EAGAIN))
 					continue;
 				if (ret == AVERROR_EOF || ret < 0)
-					return thumbnailError("Error while decoding video.");
+					return error(filename, "Error while decoding video.");
 				// Convert the image from its native format to RGB
 				sws_scale(sws_ctx, (uint8_t const* const*) pFrame->data, pFrame->linesize, 0,
 						  videoStream.codecContext->height, pFrameRGB->data, pFrameRGB->linesize);
@@ -294,7 +284,7 @@ public:
 		}
 
 		if (!saved)
-			return thumbnailError("Unable to save a thumbnail.");
+			return error(filename, "Unable to save a thumbnail.");
 
 		// Free buffer and frames
 		av_packet_unref(&packet);
@@ -308,49 +298,29 @@ public:
 	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo);
 };
 
-inline std::ostream& operator<<(std::ostream& o, const HexEncoder& hexEncoder) {
-	const char* str = hexEncoder.str;
-	o << '"';
-	while (*str) {
-		unsigned char c = *str;
-		o << digits[c >> 4] << digits[c & (((unsigned int) 1 << 4) - 1)];
-		++str;
-	}
-	o << '"';
-	return o;
-}
-
-inline std::ostream& operator<<(std::ostream& o, const CStringToJson& cStringToJson) {
-	std::string outputString(cStringToJson.str);
-	replaceString(outputString, "\"", "\\\"");
-	replaceString(outputString, "\\", "\\\\");
-	o << '"' << outputString << '"';
-	return o;
-}
-
 inline std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
 	AVRational* frame_rate = &videoInfo.videoStream.stream->avg_frame_rate;
 	if (!frame_rate->den)
 		frame_rate = &videoInfo.videoStream.stream->r_frame_rate;
 	o << '{';
-	o << R"("filename":)" << CStringToJson(videoInfo.filename) << ',';
+	o << R"("filename":)" << StringEncoder(videoInfo.filename, EncoderType::JSON) << ',';
 	o << R"("duration":)" << videoInfo.format->duration << ',';
 	o << R"("duration_time_base":)" << AV_TIME_BASE << ',';
 	o << R"("size":)" << avio_size(videoInfo.format->pb) << ',';
-	o << R"("container_format":)" << CStringToJson(videoInfo.format->iformat->long_name) << ',';
+	o << R"("container_format":)" << StringEncoder(videoInfo.format->iformat->long_name, EncoderType::JSON) << ',';
 	o << R"("width":)" << videoInfo.videoStream.codecContext->width << ',';
 	o << R"("height":)" << videoInfo.videoStream.codecContext->height << ',';
-	o << R"("video_codec":)" << CStringToJson(videoInfo.videoStream.codec->long_name) << ',';
+	o << R"("video_codec":)" << StringEncoder(videoInfo.videoStream.codec->long_name, EncoderType::JSON) << ',';
 	o << R"("frame_rate":")" << frame_rate->num << '/' << frame_rate->den << '"';
 	if (videoInfo.audioStream.index >= 0) {
 		o << ',';
-		o << R"("audio_codec":)" << CStringToJson(videoInfo.audioStream.codec->long_name) << ',';
+		o << R"("audio_codec":)" << StringEncoder(videoInfo.audioStream.codec->long_name, EncoderType::JSON) << ',';
 		o << R"("sample_rate":)" << videoInfo.audioStream.codecContext->sample_rate << ',';
 		o << R"("bit_rate":)" << videoInfo.audioStream.codecContext->bit_rate;
 	}
 	AVDictionaryEntry* tag = av_dict_get(videoInfo.format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX);
 	if (tag)
-		o << ',' << R"("title":)" << HexEncoder(tag->value);
+		o << ',' << R"("title":)" << StringEncoder(tag->value, EncoderType::HEX);
 	o << '}';
 	return o;
 };
@@ -360,15 +330,18 @@ inline bool run(const char* videoFilename, const char* thumbFolder = nullptr, co
 	if (videoInfo.load(videoFilename)) {
 		if (thumbFolder) {
 			if (!thumbName)
-				return videoInfo.error("Cannot generate thumbnail without thumbnail name.");
+				return error(videoFilename, "Cannot generate thumbnail without thumbnail name.");
 			std::string thumbnailPath = thumbFolder;
 			if (!thumbnailPath.empty()) {
 				char lastChar = thumbnailPath[thumbnailPath.size() - 1];
-				if (lastChar != '/' && lastChar != '\\')
-					return videoInfo.error("Thumbnail folder does not end with an OS path separator.");
+				if (lastChar != separator && lastChar != otherSeparator)
+					thumbnailPath.push_back(separator);
 			}
 			thumbnailPath += thumbName;
 			thumbnailPath += ".png";
+			for (char& character: thumbnailPath)
+				if (character == otherSeparator)
+					character = separator;
 			// Generate thumbnail.
 			videoInfo.generateThumbnail(thumbnailPath);
 		} else {
@@ -379,27 +352,34 @@ inline bool run(const char* videoFilename, const char* thumbFolder = nullptr, co
 	return true;
 }
 
+int help() {
+	std::cout << "#USAGE SINGLE VIDEO COMMAND:" << std::endl;
+	std::cout << std::endl;
+	std::cout << "#USAGE videoraptor <video_filename>" << std::endl;
+	std::cout << "#USAGE     Print info about given video file." << std::endl;
+	std::cout << std::endl;
+	std::cout << "#USAGE videoraptor <video_filename> <thumbnail_folder> <thumbnail_title>" << std::endl;
+	std::cout << "#USABE     Generate <thumbnail_folder>/<thumbnail_title>.png from given video file." << std::endl;
+	std::cout << std::endl;
+	std::cout << "#USAGE BATCH COMMAND:" << std::endl;
+	std::cout << std::endl;
+	std::cout << "#USAGE videoraptor <txt_filename>" << std::endl;
+	std::cout << "#USAGE     Parse given text file. Each line must be a single video command" << std::endl;
+	std::cout << "#USAGE     with arguments separated by a tab character." << std::endl;
+	return -1;
+}
+
 int main(int argc, char* argv[]) {
 	// Check if there are arguments.
-	if (argc != 2 && argc != 4) {
-		std::cout << "#USAGE SINGLE VIDEO COMMAND:" << std::endl;
-		std::cout << std::endl;
-		std::cout << "#USAGE videoraptor <video_filename>" << std::endl;
-		std::cout << "#USAGE     Print info about given video file." << std::endl;
-		std::cout << std::endl;
-		std::cout << "#USAGE videoraptor <video_filename> <thumbnail_folder> <thumbnail_title>" << std::endl;
-		std::cout << "#USABE     Generate <thumbnail_folder>/<thumbnail_title>.png from given video file." << std::endl;
-		std::cout << std::endl;
-		std::cout << "#USAGE BATCH COMMAND:" << std::endl;
-		std::cout << std::endl;
-		std::cout << "#USAGE videoraptor <txt_filename>" << std::endl;
-		std::cout << "#USAGE     Parse given text file. Each line must be a single video command "
-			   "with arguments separated by a tab character." << std::endl;
+	if (argc != 2 && argc != 4)
+		return help();
+	av_log_set_callback(customCallback);
+	// Load output image codec (for video thumbnails).
+	imageCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
+	if (!imageCodec) {
+		std::cout << "#ERROR PNG codec not found." << std::endl;
 		return -1;
 	}
-	// Register all formats and codecs
-	av_register_all();
-	av_log_set_callback(customCallback);
 	// Parse arguments.
 	if (extensionIsTxt(argv[1])) {
 		std::cout << "#MESSAGE Given a TXT file." << std::endl;
@@ -410,12 +390,12 @@ int main(int argc, char* argv[]) {
 			stripString(line);
 			if (!line.empty() && line[0] != '#') {
 				size_t posTab1 = line.find('\t', 0);
-				size_t posTab2 = STR_FOUND(posTab1) ? line.find('\t', posTab1 + 1) : STR_NONE;
+				size_t posTab2 = (posTab1 != std::string::npos) ? line.find('\t', posTab1 + 1) : std::string::npos;
 				const char* videoFilename = line.c_str();
 				const char* thumbnailFolder = nullptr;
 				const char* thumbnailName = nullptr;
-				if (STR_FOUND(posTab1)) {
-					if (posTab2 == STR_NONE) {
+				if (posTab1 != std::string::npos) {
+					if (posTab2 == std::string::npos) {
 						std::cout << "#ERROR line " << line << std::endl;
 						std::cout << "#ERROR Bad syntax (expected 3 columns separated by a tab)." << std::endl;
 						videoFilename = nullptr;
