@@ -4,10 +4,16 @@
  *   (2018/04/15): https://github.com/mikeboers/PyAV/blob/develop/av/container/input.pyx
  *   (2018/04/15): https://www.ffmpeg.org/doxygen/3.4/index.html
  *   (2018/04/29): https://stackoverflow.com/a/12563019
+ *   (2018/05/09): https://github.com/lvandeve/lodepng
  * #### Compilation command (with ffmpeg 4.0)
- *   g++ videoraptor.cpp -o videoraptor
- *   -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir>
+ *   g++ videoraptor.cpp lodepng.h lodepng.cpp -o videoraptor
+ *   -I . -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir>
  *   -lavcodec -lavformat -lavutil -lswscale
+ * #### Compilation command (windowe)
+ *   g++ videoraptor.cpp lodepng.h lodepng.cpp -o .local\videoraptor
+ *   -I . -I ..\ffmpeg-4.0-win64-dev\include -L ..\ffmpeg-4.0-win64-dev\lib
+ *   -lavcodec -lavformat -lavutil -lswscale
+ *   -O3
  * #### Usage (print help)
  *   videoraptor
  * #### Usage notes
@@ -35,6 +41,9 @@ extern "C" {
 #include <cstring>
 #include <iostream>
 #include <fstream>
+#include <vector>
+#include <lodepng.h>
+#include <sstream>
 
 #ifdef WIN32
 const char separator = '\\', otherSeparator = '/';
@@ -44,6 +53,7 @@ const char separator = '/', otherSeparator = '\\';
 const char* const digits = "0123456789ABCDEF";
 const char* globalCurrentFilename = nullptr;
 const AVCodec* imageCodec = nullptr;
+const enum AVPixelFormat PIXEL_FMT = AV_PIX_FMT_RGBA;
 
 void customCallback(void* avcl, int level, const char* fmt, va_list vl) {
 	if (level < av_log_get_level() && globalCurrentFilename) {
@@ -158,30 +168,21 @@ class VideoInfo {
 	StreamInfo audioStream;
 	StreamInfo videoStream;
 
-	bool savePNG(AVFrame* frame, const std::string& thumbnailPath) {
-		AVPacket pkt;
-		AVCodecContext* imageCodecContext = avcodec_alloc_context3(imageCodec);
-		if (!imageCodecContext)
-			return error(filename, "Could not allocate PNG codec context.");
-		imageCodecContext->time_base = (AVRational) {1, 25};
-		imageCodecContext->width = videoStream.codecContext->width;
-		imageCodecContext->height = videoStream.codecContext->height;
-		imageCodecContext->pix_fmt = AV_PIX_FMT_RGB24;
-		if (avcodec_open2(imageCodecContext, imageCodec, NULL) < 0)
-			return error(filename, "Could not open PNG codec.");
-		av_init_packet(&pkt);
-		pkt.data = NULL;
-		pkt.size = 0;
-		if (avcodec_send_frame(imageCodecContext, frame) < 0)
-			return error(filename, "Error sending frame for PNG encoding.");
-		if (avcodec_receive_packet(imageCodecContext, &pkt) < 0)
-			return error(filename, "Error receiving packet for PNG encoding.");
-		FILE* f = fopen(thumbnailPath.c_str(), "wb");
-		if (!f) return error(filename, "Unable to open thumbnail file for writing.");
-		fwrite(pkt.data, 1, pkt.size, f);
-		fclose(f);
-		av_packet_unref(&pkt);
-		avcodec_free_context(&imageCodecContext);
+	bool savePNG(AVFrame* pFrame, const std::string& thumbnailPath) {
+		std::vector<unsigned char> image((size_t) (pFrame->width * pFrame->height * 4));
+
+		// Write pixel data
+		for (unsigned int y = 0; y < pFrame->height; ++y)
+			memcpy(image.data() + (4 * pFrame->width * y), pFrame->data[0] + y * pFrame->linesize[0],
+				   (size_t) (pFrame->width * 4));
+
+		unsigned ret = lodepng::encode(
+				thumbnailPath, image, (unsigned int) pFrame->width, (unsigned int) pFrame->height);
+		if (ret) {
+			std::ostringstream os;
+			os << "encoder error " << error << ": " << lodepng_error_text(ret) << std::endl;
+			return error(filename, os.str().c_str());
+		}
 		return true;
 	}
 
@@ -215,43 +216,45 @@ public:
 	}
 
 	bool generateThumbnail(const std::string& thumbnailPath) {
-		AVFrame* pFrame = NULL;
-		AVFrame* pFrameRGB = NULL;
+		AVFrame* frame = NULL;
+		AVFrame* frameRGB = NULL;
 		uint8_t* buffer = NULL;
-		struct SwsContext* sws_ctx = NULL;
+		struct SwsContext* swsContext = NULL;
 		AVPacket packet;
 
 		int numBytes;
 		int saved = 0;
 		int align = 32;
+		int outputWidth = videoStream.codecContext->width / 2;
+		int outputHeight = videoStream.codecContext->height / 2;
+		if (!outputWidth || !outputHeight) {
+			outputWidth = videoStream.codecContext->width;
+			outputHeight = videoStream.codecContext->height;
+		}
 
 		// Allocate video frame
-		pFrame = av_frame_alloc();
-		if (pFrame == NULL)
+		frame = av_frame_alloc();
+		if (frame == NULL)
 			return error(filename, "Unable to allocate input frame.");
 
 		// Allocate an AVFrame structure
-		pFrameRGB = av_frame_alloc();
-		if (pFrameRGB == NULL)
+		frameRGB = av_frame_alloc();
+		if (frameRGB == NULL)
 			return error(filename, "Unable to allocate output frame.");
 
 		// Determine required buffer size and allocate buffer
-		numBytes = av_image_get_buffer_size(
-				AV_PIX_FMT_RGB24, videoStream.codecContext->width, videoStream.codecContext->height, align);
+		numBytes = av_image_get_buffer_size(PIXEL_FMT, outputWidth, outputHeight, align);
 		buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
 		if (!buffer)
 			return error(filename, "Unable to allocate output frame buffer.");
 
-		sws_ctx = sws_getContext(
+		swsContext = sws_getContext(
 				videoStream.codecContext->width, videoStream.codecContext->height, videoStream.codecContext->pix_fmt,
-				videoStream.codecContext->width, videoStream.codecContext->height, AV_PIX_FMT_RGB24,
-				SWS_BILINEAR, NULL, NULL, NULL
+				outputWidth, outputHeight, PIXEL_FMT, SWS_BILINEAR, NULL, NULL, NULL
 		);
 
-		// Assign appropriate parts of buffer to image planes in pFrameRGB
-		av_image_fill_arrays(pFrameRGB->data, pFrameRGB->linesize, buffer,
-							 AV_PIX_FMT_RGB24, videoStream.codecContext->width, videoStream.codecContext->height,
-							 align);
+		// Assign appropriate parts of buffer to image planes in frameRGB
+		av_image_fill_arrays(frameRGB->data, frameRGB->linesize, buffer, PIXEL_FMT, outputWidth, outputHeight, align);
 
 		// seek
 		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD) < 0)
@@ -265,19 +268,19 @@ public:
 				int ret = avcodec_send_packet(videoStream.codecContext, &packet);
 				if (ret < 0)
 					return error(filename, "Unable to send packet for decoding.");
-				ret = avcodec_receive_frame(videoStream.codecContext, pFrame);
+				ret = avcodec_receive_frame(videoStream.codecContext, frame);
 				if (ret == AVERROR(EAGAIN))
 					continue;
 				if (ret == AVERROR_EOF || ret < 0)
 					return error(filename, "Error while decoding video.");
-				// Convert the image from its native format to RGB
-				sws_scale(sws_ctx, (uint8_t const* const*) pFrame->data, pFrame->linesize, 0,
-						  videoStream.codecContext->height, pFrameRGB->data, pFrameRGB->linesize);
+				// Convert the image from its native format to PIXEL_FMT
+				sws_scale(swsContext, (uint8_t const* const*) frame->data, frame->linesize, 0,
+						  videoStream.codecContext->height, frameRGB->data, frameRGB->linesize);
 				// Save the frame to disk
-				pFrameRGB->width = videoStream.codecContext->width;
-				pFrameRGB->height = videoStream.codecContext->height;
-				pFrameRGB->format = AV_PIX_FMT_RGB24;
-				if (!savePNG(pFrameRGB, thumbnailPath))
+				frameRGB->width = outputWidth;
+				frameRGB->height = outputHeight;
+				frameRGB->format = PIXEL_FMT;
+				if (!savePNG(frameRGB, thumbnailPath))
 					return false;
 				saved = 1;
 			}
@@ -289,8 +292,8 @@ public:
 		// Free buffer and frames
 		av_packet_unref(&packet);
 		av_free(buffer);
-		av_frame_free(&pFrameRGB);
-		av_frame_free(&pFrame);
+		av_frame_free(&frameRGB);
+		av_frame_free(&frame);
 
 		return true;
 	}

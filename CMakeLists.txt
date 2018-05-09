@@ -3,4 +3,5 @@ project(videoraptor)
 
 set(CMAKE_CXX_STANDARD 11)
 include_directories(${PROJECT_SOURCE_DIR}/../ffmpeg-4.0-win64-dev/include)
-add_executable(videoraptor videoraptor.cpp)
+include_directories(${PROJECT_SOURCE_DIR})
+add_executable(videoraptor videoraptor.cpp lodepng.h lodepng.cpp)
