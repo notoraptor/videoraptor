@@ -12,8 +12,7 @@
  * #### Compilation command (windowe)
  *   g++ videoraptor.cpp lodepng.h lodepng.cpp -o .local\videoraptor
  *   -I . -I ..\ffmpeg-4.0-win64-dev\include -L ..\ffmpeg-4.0-win64-dev\lib
- *   -lavcodec -lavformat -lavutil -lswscale
- *   -O3
+ *   -lavcodec -lavformat -lavutil -lswscale -O3
  * #### Usage (print help)
  *   videoraptor
  * #### Usage notes
@@ -156,6 +155,14 @@ struct StreamInfo {
 		av_opt_set_int(codecContext, "refcounted_frames", 1, 0);
 		if (avcodec_open2(codecContext, codec, NULL) < 0)
 			return error(filename, "Unable to open codec.");
+		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+			if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
+				return error(filename, "Video stream has invalid pixel format.");
+			if (codecContext->width <= 0)
+				return error(filename, "Video stream has invalid width.");
+			if (codecContext->height < 0)
+				return error(filename, "Video stream has invalid height.");
+		}
 		return true;
 	}
 
