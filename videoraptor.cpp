@@ -2,22 +2,20 @@
  * #### References
  *   (2018/04/15): https://github.com/mpenkov/ffmpeg-tutorial/blob/master/tutorial01.c
  *   (2018/04/15): https://github.com/mikeboers/PyAV/blob/develop/av/container/input.pyx
- *   (2018/04/15): https://www.ffmpeg.org/doxygen/3.4/index.html
+ *   (2018/04/15): https://www.ffmpeg.org/doxygen/trunk/index.html
  *   (2018/04/29): https://stackoverflow.com/a/12563019
  *   (2018/05/09): https://github.com/lvandeve/lodepng
  * #### Compilation command (with ffmpeg 4.0)
  *   g++ videoraptor.cpp lodepng.h lodepng.cpp -o videoraptor
- *   -I . -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir>
- *   -lavcodec -lavformat -lavutil -lswscale
+ *   -I . -I <ffmpeg-include-dir> -L <ffmpeg-lib-dir> -lavcodec -lavformat -lavutil -lswscale -O3
  * #### Compilation command (windowe)
  *   g++ videoraptor.cpp lodepng.h lodepng.cpp -o .local\videoraptor
- *   -I . -I ..\ffmpeg-4.0-win64-dev\include -L ..\ffmpeg-4.0-win64-dev\lib
- *   -lavcodec -lavformat -lavutil -lswscale -O3
+ *   -I . -I ..\ffmpeg-4.0-win64-dev\include -L ..\ffmpeg-4.0-win64-dev\lib -lavcodec -lavformat -lavutil -lswscale -O3
  * #### Usage (print help)
  *   videoraptor
  * #### Usage notes
  *   On Windows, you need FFMPEG DLLs: avcodec-*.dll, avformat-*.dll, avutil-*.dll, swresample-*.dll, swscale-*.dll.
- *   Some errors and warnings may be written in stderr:
+ *   Some messages and warnings may be written in stdout:
  *     #ERROR <error_message>
  *     #FINISHED <integer>
  *     #IGNORED <video_filename>
@@ -32,17 +30,17 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
-#include <libavutil/log.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/opt.h>
 }
 
-#include <cstring>
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <unordered_map>
 #include <vector>
 #include <lodepng.h>
-#include <sstream>
 
 #ifdef WIN32
 const char separator = '\\', otherSeparator = '/';
@@ -50,54 +48,72 @@ const char separator = '\\', otherSeparator = '/';
 const char separator = '/', otherSeparator = '\\';
 #endif
 const char* const digits = "0123456789ABCDEF";
-const char* globalCurrentFilename = nullptr;
+const AVPixelFormat PIXEL_FMT = AV_PIX_FMT_RGBA;
 const AVCodec* imageCodec = nullptr;
-const enum AVPixelFormat PIXEL_FMT = AV_PIX_FMT_RGBA;
+const char* currentFilename = nullptr;
 
 void customCallback(void* avcl, int level, const char* fmt, va_list vl) {
-	if (level < av_log_get_level() && globalCurrentFilename) {
+	if (level < av_log_get_level() && currentFilename) {
 		char currentMessage[2048] = {};
 		vsnprintf(currentMessage, sizeof(currentMessage), fmt, vl);
 		for (char& character: currentMessage) {
 			if (character == '\r' || character == '\n')
 				character = ' ';
 		}
-		std::cout << "#VIDEO_WARNING[" << globalCurrentFilename << "]" << currentMessage << std::endl;
+		std::cout << "#VIDEO_WARNING[" << currentFilename << "]" << currentMessage << std::endl;
 	}
 }
 
-inline bool error(const char* filename, const char* message) {
-	std::cout << "#VIDEO_ERROR[" << filename << "]" << message << std::endl;
-	return false;
-}
-
-inline void stripString(std::string& s) {
-	size_t stripLeft = std::string::npos;
-	for (size_t i = 0; i < s.length(); ++i) {
-		if (!std::isspace(s[i])) {
-			stripLeft = i;
-			break;
+struct HWDevices {
+	std::vector<AVHWDeviceType> available;
+	std::unordered_map<AVHWDeviceType, AVBufferRef*> loaded;
+	size_t indexUsed;
+	HWDevices(): available(), loaded(), indexUsed(0) {
+		AVHWDeviceType type = AV_HWDEVICE_TYPE_NONE;
+		while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE) {
+			/* I don't yet know why, but, if CUDA device is tested at a point and fail,
+			 * then all next hardware acceleration devices initializations will fail.
+			 * So I will ignore CUDA device. */
+			if (type != AV_HWDEVICE_TYPE_CUDA)
+				available.push_back(type);
 		}
-	}
-	if (stripLeft == std::string::npos) {
-		s.clear();
-	} else {
-		s.erase(0, stripLeft);
-		for (size_t i = s.length(); i > 0; --i) {
-			if (!std::isspace(s[i - 1])) {
-				if (i != s.length())
-					s.erase(i);
-				break;
-			}
+		std::cout << "#MESSAGE Found " << available.size() << " hardware acceleration device(s)";
+		if (available.size()) {
+			std::cout << ": " << av_hwdevice_get_type_name(available[0]);
+			for (size_t i = 1; i < available.size(); ++i)
+				std::cout << ", " << av_hwdevice_get_type_name(available[i]);
 		}
+		std::cout << '.' << std::endl;
 	}
-}
+	~HWDevices() {
+		for (auto it = loaded.begin(); it != loaded.end(); ++it)
+			av_buffer_unref(&it->second);
+	}
+};
 
-inline bool extensionIsTxt(const char* s) {
-	size_t len = strlen(s);
-	return len >= 4 && s[len - 4] == '.' && (s[len - 3] == 't' || s[len - 3] == 'T')
-		   && (s[len - 2] == 'x' || s[len - 2] == 'X') && (s[len - 1] == 't' || s[len - 1] == 'T');
-}
+class Error {
+	std::ostringstream oss;
+public:
+	explicit Error(const char* filename = nullptr): oss() {
+		if (filename)
+			oss << "#VIDEO_ERROR[" << filename << "]";
+		else
+			oss << "#ERROR ";
+	}
+
+	Error& write(const char* message) {
+		oss << message;
+		return *this;
+	}
+
+	operator bool() const {
+		return false;
+	}
+
+	~Error() {
+		std::cout << oss.str() << std::endl;
+	}
+};
 
 enum class EncoderType { HEX, JSON };
 
@@ -135,38 +151,148 @@ inline std::ostream& operator<<(std::ostream& o, const StringEncoder& stringEnco
 	return o;
 }
 
+struct ThumbnailContext {
+	AVFrame* tmpFrame; // either frame or swFrame.
+	AVFrame* frame;
+	AVFrame* swFrame;
+	AVFrame* frameRGB;
+	uint8_t* buffer;
+	SwsContext* swsContext;
+	AVPacket packet;
+	bool packetIsUsed;
+
+	ThumbnailContext(): frame(nullptr), swFrame(nullptr), tmpFrame(nullptr), frameRGB(nullptr), buffer(nullptr),
+						swsContext(nullptr), packet(), packetIsUsed(false) {}
+
+	~ThumbnailContext() {
+		if (packetIsUsed)
+			av_packet_unref(&packet);
+		if (frame)
+			av_frame_free(&frame);
+		if (swFrame)
+			av_frame_free(&swFrame);
+		if (frameRGB)
+			av_frame_free(&frameRGB);
+		if (buffer)
+			av_freep(&buffer);
+		if (swsContext)
+			sws_freeContext(swsContext);
+	}
+
+};
+
 struct StreamInfo {
 	int index;
 	AVStream* stream;
 	AVCodec* codec;
 	AVCodecContext* codecContext;
 
-	StreamInfo(): index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr) {}
+	const AVCodecHWConfig* selectedConfig;
+	bool deviceError;
 
-	bool load(const char* filename, AVFormatContext* format, enum AVMediaType type) {
+	StreamInfo(): index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr),
+				  deviceError(false), selectedConfig(nullptr) {}
+
+	bool loadDeviceConfigForCodec(AVHWDeviceType deviceType) {
+		for (int i = 0;; ++i) {
+			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+			if (!config) {
+				deviceError = true;
+				return Error().write("Unable to find device config for codec ")
+						.write(av_hwdevice_get_type_name(deviceType));
+			}
+			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == deviceType) {
+				selectedConfig = config;
+				return true;
+			}
+		}
+	}
+
+	int initHWDeviceContext(HWDevices& devices) {
+		if (devices.loaded.find(selectedConfig->device_type) != devices.loaded.end()) {
+			codecContext->hw_device_ctx = av_buffer_ref(devices.loaded[selectedConfig->device_type]);
+			std::cout << "#MESSAGE Using already loaded device context "
+					  << av_hwdevice_get_type_name(selectedConfig->device_type)
+					  << " with pixel format " << selectedConfig->pix_fmt <<
+					  " (" << av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name << ")." << std::endl;
+			return true;
+		}
+		AVBufferRef* hwDeviceCtx = nullptr;
+		if (av_hwdevice_ctx_create(&hwDeviceCtx, selectedConfig->device_type, NULL, NULL, 0) < 0) {
+			deviceError = true;
+			return Error().write("Failed to create any HW device.");
+		}
+		devices.loaded[selectedConfig->device_type] = hwDeviceCtx;
+		codecContext->hw_device_ctx = av_buffer_ref(hwDeviceCtx);
+		std::cout << "#MESSAGE Created device context "
+				  << av_hwdevice_get_type_name(selectedConfig->device_type)
+				  << " with pixel format " << selectedConfig->pix_fmt <<
+				  " (" << av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name << ")." << std::endl;
+		return true;
+	}
+
+	bool getHWFormat(const AVPixelFormat* pix_fmts) {
+		if (selectedConfig) {
+			for (const AVPixelFormat* p = pix_fmts; *p != -1; ++p) {
+				if (*p == selectedConfig->pix_fmt)
+					return true;
+			}
+		}
+
+		return Error().write("Failed to get HW surface format.");
+	}
+
+	bool load(const char* filename, AVFormatContext* format, AVMediaType type, HWDevices& devices, size_t deviceIndex) {
 		if ((index = av_find_best_stream(format, type, -1, -1, &codec, 0)) < 0)
 			return false;
 		stream = format->streams[index];
-		codecContext = avcodec_alloc_context3(codec);
-		if (!codecContext)
-			return error(filename, "Unable to alloc codec context.");
+
+		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
+			&& deviceIndex < devices.available.size()
+			&& !loadDeviceConfigForCodec(devices.available[deviceIndex])) {
+				return false;
+		}
+
+		if (!(codecContext = avcodec_alloc_context3(codec)))
+			return Error(filename).write("Unable to alloc codec context.");
 		if (avcodec_parameters_to_context(codecContext, stream->codecpar) < 0)
-			return error(filename, "Unable to convert codec parameters to context.");
-		av_opt_set_int(codecContext, "refcounted_frames", 1, 0);
+			return Error(filename).write("Unable to convert codec parameters to context.");
+
+		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && selectedConfig) {
+			codecContext->opaque = this;
+			codecContext->get_format = get_hw_format;
+			av_opt_set_int(codecContext, "refcounted_frames", 1, 0);
+			if (!initHWDeviceContext(devices))
+				return false;
+		}
+
 		if (avcodec_open2(codecContext, codec, NULL) < 0)
-			return error(filename, "Unable to open codec.");
+			return Error(filename).write("Unable to open codec.");
+
 		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
 			if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
-				return error(filename, "Video stream has invalid pixel format.");
+				return Error(filename).write("Video stream has invalid pixel format.");
 			if (codecContext->width <= 0)
-				return error(filename, "Video stream has invalid width.");
+				return Error(filename).write("Video stream has invalid width.");
 			if (codecContext->height < 0)
-				return error(filename, "Video stream has invalid height.");
+				return Error(filename).write("Video stream has invalid height.");
 		}
 		return true;
 	}
 
-	void clear() { if (codecContext) avcodec_free_context(&codecContext); }
+	void clear() {
+		if (codecContext)
+			avcodec_free_context(&codecContext);
+	}
+
+	static AVPixelFormat get_hw_format(AVCodecContext* ctx, const AVPixelFormat* pix_fmts) {
+		StreamInfo* streamInfo = (StreamInfo*) ctx->opaque;
+		if (!streamInfo->getHWFormat(pix_fmts)) {
+			streamInfo->deviceError = true;
+			return AV_PIX_FMT_NONE;
+		}
+		return streamInfo->selectedConfig->pix_fmt;
+	}
 };
 
 class VideoInfo {
@@ -186,14 +312,119 @@ class VideoInfo {
 		unsigned ret = lodepng::encode(
 				thumbnailPath, image, (unsigned int) pFrame->width, (unsigned int) pFrame->height);
 		if (ret) {
-			std::ostringstream os;
-			os << "encoder error " << error << ": " << lodepng_error_text(ret) << std::endl;
-			return error(filename, os.str().c_str());
+			return Error(filename).write("PNG encoder error: ").write(lodepng_error_text(ret));
 		}
 		return true;
 	}
 
 public:
+
+	bool generateThumbnail(const std::string& thumbnailPath) {
+		ThumbnailContext thCtx;
+
+		int numBytes;
+		int align = 32;
+		int outputWidth = videoStream.codecContext->width / 4;
+		int outputHeight = videoStream.codecContext->height / 4;
+		if (!outputWidth || !outputHeight) {
+			outputWidth = videoStream.codecContext->width;
+			outputHeight = videoStream.codecContext->height;
+		}
+
+		// seek
+		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD) < 0)
+			return Error(filename).write("Unable to seek into video.");
+
+		// Read frames and save first video frame as image to disk
+		while (av_read_frame(format, &thCtx.packet) >= 0) {
+			// Is this a packet from the video stream?
+			if (thCtx.packet.stream_index == videoStream.index) {
+				// Send packet
+				int ret = avcodec_send_packet(videoStream.codecContext, &thCtx.packet);
+				if (ret < 0)
+					return Error(filename).write("Unable to send packet for decoding.");
+
+				// Allocate video frame
+				thCtx.frame = av_frame_alloc();
+				if (thCtx.frame == NULL)
+					return Error(filename).write("Unable to allocate input frame.");
+
+				// Receive frame.
+				ret = avcodec_receive_frame(videoStream.codecContext, thCtx.frame);
+				if (ret == AVERROR(EAGAIN))
+					continue;
+				if (ret == AVERROR_EOF || ret < 0)
+					return Error(filename).write("Error while decoding video.");
+
+				// Set frame to save (either from decoed frame or from GPU).
+				if (videoStream.selectedConfig && thCtx.frame->format == videoStream.selectedConfig->pix_fmt) {
+					// Allocate HW video frame
+					thCtx.swFrame = av_frame_alloc();
+					if (thCtx.swFrame == NULL)
+						return Error(filename).write("Unable to allocate HW input frame.");
+					/* retrieve data from GPU to CPU */
+					if (av_hwframe_transfer_data(thCtx.swFrame, thCtx.frame, 0) < 0)
+						return Error(filename).write("Error transferring the data to system memory");
+					thCtx.tmpFrame = thCtx.swFrame;
+				} else {
+					thCtx.tmpFrame = thCtx.frame;
+				}
+
+				// Allocate an AVFrame structure
+				thCtx.frameRGB = av_frame_alloc();
+				if (thCtx.frameRGB == NULL)
+					return Error(filename).write("Unable to allocate output frame.");
+
+				// Determine required buffer size and allocate buffer
+				numBytes = av_image_get_buffer_size(PIXEL_FMT, outputWidth, outputHeight, align);
+				thCtx.buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
+				if (!thCtx.buffer)
+					return Error(filename).write("Unable to allocate output frame buffer.");
+
+				// Assign appropriate parts of buffer to image planes in frameRGB
+				av_image_fill_arrays(thCtx.frameRGB->data, thCtx.frameRGB->linesize, thCtx.buffer,
+									 PIXEL_FMT, outputWidth, outputHeight, align);
+
+				thCtx.swsContext = sws_getContext(
+						videoStream.codecContext->width, videoStream.codecContext->height,
+						(AVPixelFormat) thCtx.tmpFrame->format,
+						outputWidth, outputHeight, PIXEL_FMT, SWS_BILINEAR, NULL, NULL, NULL
+				);
+
+				// Convert the image from its native format to PIXEL_FMT
+				sws_scale(thCtx.swsContext, (uint8_t const* const*) thCtx.tmpFrame->data, thCtx.tmpFrame->linesize, 0,
+						  videoStream.codecContext->height, thCtx.frameRGB->data, thCtx.frameRGB->linesize);
+				// Save the frame to disk
+				thCtx.frameRGB->width = outputWidth;
+				thCtx.frameRGB->height = outputHeight;
+				thCtx.frameRGB->format = PIXEL_FMT;
+				return savePNG(thCtx.frameRGB, thumbnailPath);
+			}
+		}
+
+		return Error(filename).write("Unable to save a thumbnail.");
+	}
+
+	bool load(const char* videoFilename, HWDevices& devices, size_t deviceIndex) {
+		filename = videoFilename;
+		currentFilename = filename;
+		// Open video file.
+		if (avformat_open_input(&format, videoFilename, NULL, NULL) != 0)
+			return Error(filename).write("Unable to open file.");
+		// Retrieve stream information.
+		if (avformat_find_stream_info(format, NULL) < 0)
+			return Error(filename).write("Unable to get streams info.");
+		// Load best audio and video streams.
+		if (!videoStream.load(filename, format, AVMEDIA_TYPE_VIDEO, devices, deviceIndex))
+			return Error(filename).write("Unable to load video stream.");
+		if (!audioStream.load(filename, format, AVMEDIA_TYPE_AUDIO, devices, deviceIndex) && audioStream.index >= 0)
+			return Error(filename).write("Unable to load audio stream.");
+		return true;
+	}
+
+	bool hasDeviceError() {
+		return videoStream.deviceError;
+	}
 
 	VideoInfo(): filename(nullptr), format(nullptr), audioStream(), videoStream() {}
 
@@ -203,106 +434,6 @@ public:
 			audioStream.clear();
 			avformat_close_input(&format);
 		}
-	}
-
-	bool load(const char* videoFilename) {
-		filename = videoFilename;
-		globalCurrentFilename = filename;
-		// Open video file.
-		if (avformat_open_input(&format, videoFilename, NULL, NULL) != 0)
-			return error(filename, "Unable to open file.");
-		// Retrieve stream information.
-		if (avformat_find_stream_info(format, NULL) < 0)
-			return error(filename, "Unable to get streams info.");
-		// Load best audio and video streams.
-		if (!videoStream.load(filename, format, AVMEDIA_TYPE_VIDEO))
-			return error(filename, "Unable to load video stream.");
-		if (!audioStream.load(filename, format, AVMEDIA_TYPE_AUDIO) && audioStream.index >= 0)
-			return error(filename, "Unable to load audio stream found in video.");
-		return true;
-	}
-
-	bool generateThumbnail(const std::string& thumbnailPath) {
-		AVFrame* frame = NULL;
-		AVFrame* frameRGB = NULL;
-		uint8_t* buffer = NULL;
-		struct SwsContext* swsContext = NULL;
-		AVPacket packet;
-
-		int numBytes;
-		int saved = 0;
-		int align = 32;
-		int outputWidth = videoStream.codecContext->width / 2;
-		int outputHeight = videoStream.codecContext->height / 2;
-		if (!outputWidth || !outputHeight) {
-			outputWidth = videoStream.codecContext->width;
-			outputHeight = videoStream.codecContext->height;
-		}
-
-		// Allocate video frame
-		frame = av_frame_alloc();
-		if (frame == NULL)
-			return error(filename, "Unable to allocate input frame.");
-
-		// Allocate an AVFrame structure
-		frameRGB = av_frame_alloc();
-		if (frameRGB == NULL)
-			return error(filename, "Unable to allocate output frame.");
-
-		// Determine required buffer size and allocate buffer
-		numBytes = av_image_get_buffer_size(PIXEL_FMT, outputWidth, outputHeight, align);
-		buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
-		if (!buffer)
-			return error(filename, "Unable to allocate output frame buffer.");
-
-		swsContext = sws_getContext(
-				videoStream.codecContext->width, videoStream.codecContext->height, videoStream.codecContext->pix_fmt,
-				outputWidth, outputHeight, PIXEL_FMT, SWS_BILINEAR, NULL, NULL, NULL
-		);
-
-		// Assign appropriate parts of buffer to image planes in frameRGB
-		av_image_fill_arrays(frameRGB->data, frameRGB->linesize, buffer, PIXEL_FMT, outputWidth, outputHeight, align);
-
-		// seek
-		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD) < 0)
-			return error(filename, "Unable to seek into video.");
-
-		// Read frames and save first video frame as image to disk
-		while (!saved && av_read_frame(format, &packet) >= 0) {
-			// Is this a packet from the video stream?
-			if (packet.stream_index == videoStream.index) {
-				// Decode video frame
-				int ret = avcodec_send_packet(videoStream.codecContext, &packet);
-				if (ret < 0)
-					return error(filename, "Unable to send packet for decoding.");
-				ret = avcodec_receive_frame(videoStream.codecContext, frame);
-				if (ret == AVERROR(EAGAIN))
-					continue;
-				if (ret == AVERROR_EOF || ret < 0)
-					return error(filename, "Error while decoding video.");
-				// Convert the image from its native format to PIXEL_FMT
-				sws_scale(swsContext, (uint8_t const* const*) frame->data, frame->linesize, 0,
-						  videoStream.codecContext->height, frameRGB->data, frameRGB->linesize);
-				// Save the frame to disk
-				frameRGB->width = outputWidth;
-				frameRGB->height = outputHeight;
-				frameRGB->format = PIXEL_FMT;
-				if (!savePNG(frameRGB, thumbnailPath))
-					return false;
-				saved = 1;
-			}
-		}
-
-		if (!saved)
-			return error(filename, "Unable to save a thumbnail.");
-
-		// Free buffer and frames
-		av_packet_unref(&packet);
-		av_free(buffer);
-		av_frame_free(&frameRGB);
-		av_frame_free(&frame);
-
-		return true;
 	}
 
 	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo);
@@ -335,31 +466,74 @@ inline std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
 	return o;
 };
 
-inline bool run(const char* videoFilename, const char* thumbFolder = nullptr, const char* thumbName = nullptr) {
-	VideoInfo videoInfo;
-	if (videoInfo.load(videoFilename)) {
-		if (thumbFolder) {
-			if (!thumbName)
-				return error(videoFilename, "Cannot generate thumbnail without thumbnail name.");
-			std::string thumbnailPath = thumbFolder;
+inline bool run(HWDevices& devices, const char* filename, const char* thFolder = nullptr, const char* thName = nullptr) {
+	size_t deviceIndex = devices.indexUsed;
+	do {
+		VideoInfo videoInfo;
+		if (!videoInfo.load(filename, devices, deviceIndex)) {
+			if (videoInfo.hasDeviceError()) {
+				std::cout << "#WARNING Device error." << std::endl;
+				++deviceIndex;
+				continue;
+			}
+			return false;
+		}
+		devices.indexUsed = deviceIndex;
+		if (thFolder) {
+			if (!thName)
+				return Error(filename).write("Cannot generate thumbnail without thumbnail name.");
+			std::string thumbnailPath = thFolder;
 			if (!thumbnailPath.empty()) {
 				char lastChar = thumbnailPath[thumbnailPath.size() - 1];
 				if (lastChar != separator && lastChar != otherSeparator)
 					thumbnailPath.push_back(separator);
 			}
-			thumbnailPath += thumbName;
+			thumbnailPath += thName;
 			thumbnailPath += ".png";
 			for (char& character: thumbnailPath)
 				if (character == otherSeparator)
 					character = separator;
 			// Generate thumbnail.
-			videoInfo.generateThumbnail(thumbnailPath);
+			if (!videoInfo.generateThumbnail(thumbnailPath)) {
+				if (videoInfo.hasDeviceError())
+					continue;
+				return false;
+			};
 		} else {
 			// Print video info.
 			std::cout << videoInfo << std::endl;
 		}
+		return true;
+	} while (deviceIndex < devices.available.size());
+	return false;
+}
+
+inline void stripString(std::string& s) {
+	size_t stripLeft = std::string::npos;
+	for (size_t i = 0; i < s.length(); ++i) {
+		if (!std::isspace(s[i])) {
+			stripLeft = i;
+			break;
+		}
 	}
-	return true;
+	if (stripLeft == std::string::npos) {
+		s.clear();
+	} else {
+		s.erase(0, stripLeft);
+		for (size_t i = s.length(); i > 0; --i) {
+			if (!std::isspace(s[i - 1])) {
+				if (i != s.length())
+					s.erase(i);
+				break;
+			}
+		}
+	}
+}
+
+inline bool extensionIsTxt(const char* s) {
+	size_t len = strlen(s);
+	return len >= 4 && s[len - 4] == '.' && (s[len - 3] == 't' || s[len - 3] == 'T')
+		   && (s[len - 2] == 'x' || s[len - 2] == 'X') && (s[len - 1] == 't' || s[len - 1] == 'T');
 }
 
 int help() {
@@ -383,7 +557,9 @@ int main(int argc, char* argv[]) {
 	// Check if there are arguments.
 	if (argc != 2 && argc != 4)
 		return help();
+	// Initializations.
 	av_log_set_callback(customCallback);
+	HWDevices devices;
 	// Load output image codec (for video thumbnails).
 	imageCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
 	if (!imageCodec) {
@@ -392,7 +568,6 @@ int main(int argc, char* argv[]) {
 	}
 	// Parse arguments.
 	if (extensionIsTxt(argv[1])) {
-		std::cout << "#MESSAGE Given a TXT file." << std::endl;
 		std::ifstream textFile(argv[1]);
 		std::string line;
 		size_t count = 0;
@@ -415,7 +590,7 @@ int main(int argc, char* argv[]) {
 						thumbnailName = line.c_str() + posTab2 + 1;
 					}
 				}
-				if (videoFilename && run(videoFilename, thumbnailFolder, thumbnailName)) {
+				if (videoFilename && run(devices, videoFilename, thumbnailFolder, thumbnailName)) {
 					if ((++count) % 25 == 0)
 						std::cout << "#LOADED " << count << std::endl;
 				} else
@@ -424,7 +599,6 @@ int main(int argc, char* argv[]) {
 		}
 		std::cout << "#FINISHED " << count << std::endl;
 	} else {
-		std::cout << "#MESSAGE Given 1 movie file path." << std::endl;
 		const char* videoFilename = argv[1];
 		const char* thumbnailFolder = nullptr;
 		const char* thumbnailName = nullptr;
@@ -432,7 +606,7 @@ int main(int argc, char* argv[]) {
 			thumbnailFolder = argv[2];
 			thumbnailName = argv[3];
 		}
-		run(videoFilename, thumbnailFolder, thumbnailName);
+		run(devices, videoFilename, thumbnailFolder, thumbnailName);
 	}
 
 	return 0;
