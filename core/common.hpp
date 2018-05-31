@@ -40,7 +40,7 @@ struct Output {
 		os.str(std::string());
 		str = new char[s.length() + 1];
 		memcpy(str, s.data(), s.length());
-		str[s.length() + 1] = '\0';
+		str[s.length()] = '\0';
 		return str;
 	}
 	~Output() {
@@ -195,10 +195,6 @@ struct StreamInfo {
 	}
 
 	int initHWDeviceContext(HWDevices& devices) {
-		std::cout << "a" << std::endl;
-		out << "toto" << std::endl;
-		std::cout << "b" << std::endl;
-
 		if (devices.loaded.find(selectedConfig->device_type) != devices.loaded.end()) {
 			codecContext->hw_device_ctx = av_buffer_ref(devices.loaded[selectedConfig->device_type]);
 			out << "#MESSAGE Using already loaded device context "
@@ -218,7 +214,6 @@ struct StreamInfo {
 		 	<< av_hwdevice_get_type_name(selectedConfig->device_type)
 			<< " with pixel format " << selectedConfig->pix_fmt
 			<< " (" << av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name << ")." << std::endl;
-		std::cout << "10" << std::endl;
 		return true;
 	}
 
@@ -254,25 +249,18 @@ struct StreamInfo {
 			if (!initHWDeviceContext(devices))
 				return false;
 		}
-		std::cout << "9" << std::endl;
 
 		if (avcodec_open2(codecContext, codec, NULL) < 0)
 			return AppError(out, filename).write("Unable to open codec.");
-		std::cout << "10" << std::endl;
 
 		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-			std::cout << "11" << std::endl;
 			if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
 				return AppError(out, filename).write("Video stream has invalid pixel format.");
-			std::cout << "12" << std::endl;
 			if (codecContext->width <= 0)
 				return AppError(out, filename).write("Video stream has invalid width.");
-			std::cout << "13" << std::endl;
 			if (codecContext->height < 0)
 				return AppError(out, filename).write("Video stream has invalid height.");
-			std::cout << "14" << std::endl;
 		}
-		std::cout << "15" << std::endl;
 		return true;
 	}
 
@@ -414,10 +402,8 @@ public:
 		// Load best audio and video streams.
 		if (!videoStream.load(filename, format, AVMEDIA_TYPE_VIDEO, devices, deviceIndex))
 			return AppError(out, filename).write("Unable to load video stream.");
-		std::cout << "f" << std::endl;
 		if (!audioStream.load(filename, format, AVMEDIA_TYPE_AUDIO, devices, deviceIndex) && audioStream.index >= 0)
 			return AppError(out, filename).write("Unable to load audio stream.");
-		std::cout << "g" << std::endl;
 		return true;
 	}
 
@@ -426,7 +412,7 @@ public:
 	}
 
 	VideoInfo(std::basic_ostream<char>& output):
-			filename(nullptr), format(nullptr), audioStream(out), videoStream(out), out(output) {}
+			filename(nullptr), format(nullptr), audioStream(output), videoStream(output), out(output) {}
 
 	~VideoInfo() {
 		if (format) {
@@ -477,56 +463,41 @@ inline bool run(HWDevices& devices, std::basic_ostream<char>& out,
 	do {
 		VideoInfo videoInfo(out);
 		if (!videoInfo.load(filename, devices, deviceIndex)) {
-			std::cout << "C" << std::endl;
 			if (videoInfo.hasDeviceError()) {
 				out << "#WARNING Device error when loading video." << std::endl;
 				++deviceIndex;
 				continue;
 			}
-			std::cout << "D" << std::endl;
 			return false;
 		}
-		std::cout << "E" << std::endl;
 		devices.indexUsed = deviceIndex;
 		if (thFolder) {
-			std::cout << "F" << std::endl;
 			if (!thName)
 				return AppError(out, filename).write("Cannot generate thumbnail without thumbnail name.");
-			std::cout << "G" << std::endl;
 			std::string thumbnailPath = thFolder;
 			if (!thumbnailPath.empty()) {
-				std::cout << "H" << std::endl;
 				char lastChar = thumbnailPath[thumbnailPath.size() - 1];
 				if (lastChar != separator && lastChar != otherSeparator)
 					thumbnailPath.push_back(separator);
-				std::cout << "I" << std::endl;
 			}
-			std::cout << "J" << std::endl;
 			thumbnailPath += thName;
 			thumbnailPath += ".png";
-			std::cout << "K" << std::endl;
 			for (char& character: thumbnailPath)
 				if (character == otherSeparator)
 					character = separator;
 			// Generate thumbnail.
-			std::cout << "L" << std::endl;
 			if (!videoInfo.generateThumbnail(thumbnailPath)) {
-				std::cout << "M" << std::endl;
 				if (videoInfo.hasDeviceError()) {
 					out << "#WARNING Device error when generating thumbnail." << std::endl;
 					++deviceIndex;
 					continue;
 				}
-				std::cout << "N" << std::endl;
 				return false;
 			};
-			std::cout << "O" << std::endl;
 		} else {
-			std::cout << "E1" << std::endl;
 			// Print video info.
 			out << videoInfo << std::endl;
 		}
-		std::cout << "E2" << std::endl;
 		return true;
 	} while (deviceIndex < devices.available.size());
 	return false;
