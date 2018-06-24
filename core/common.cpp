@@ -1,7 +1,18 @@
 //
 // Created by notoraptor on 27/05/2018.
 //
+#include <iostream>
 #include "common.hpp"
+
+#ifdef WIN32
+const char separator = '\\';
+const char otherSeparator = '/';
+#else
+const char separator = '/';
+const char otherSeparator = '\\';
+#endif
+
+const char* const digits = "0123456789ABCDEF";
 
 const AVPixelFormat PIXEL_FMT = AV_PIX_FMT_RGBA;
 const AVCodec* imageCodec = nullptr;

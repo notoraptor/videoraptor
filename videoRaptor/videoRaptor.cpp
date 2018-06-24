@@ -28,8 +28,8 @@
 #include <cstddef>
 #include <cstring>
 #include <iostream>
-#include "videoRaptorBatch.hpp"
-#include "videoRaptorOnce.hpp"
+#include "videoRaptorBatch/videoRaptorBatch.hpp"
+#include "videoRaptorOnce/videoRaptorOnce.hpp"
 
 inline bool extensionIsTxt(const char* s) {
 	size_t len = strlen(s);

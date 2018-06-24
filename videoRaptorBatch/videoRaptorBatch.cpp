@@ -3,9 +3,10 @@
 //
 
 #include <string>
-#include <core/common.hpp>
 #include <fstream>
 #include <iostream>
+#include <core/common.hpp>
+#include <core/Output.hpp>
 #include "videoRaptorBatch.hpp"
 
 inline void stripString(std::string& s) {
@@ -33,14 +34,17 @@ inline void stripString(std::string& s) {
 void* createOutput() {
 	return new Output();
 }
+
 const char* outputToString(void* out) {
 	return ((Output*)out)->flush();
 }
+
 void deleteOutput(void* out) {
 	delete (Output*)out;
 }
 
-bool videoRaptorBatch(int length, const char** fileNames, const char** thumbNames, const char* thumbFolder, void* output) {
+bool videoRaptorBatch(int length, const char** fileNames, const char** thumbNames,
+					  const char* thumbFolder, void* output) {
 	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
 	HWDevices* devices = nullptr;
 	if (!(devices = initVideoRaptor(out)))
@@ -52,12 +56,30 @@ bool videoRaptorBatch(int length, const char** fileNames, const char** thumbName
 		const char* thumbnailName = thumbFolder ? thumbNames[i] : nullptr;
 		if (!videoFilename)
 			continue;
-		if (run(*devices, out, videoFilename, thumbnailName ? thumbFolder : nullptr, thumbnailName)) {
-			if ((i + 1) % 25 == 0)
-				out << "#LOADED " << (i + 1) << std::endl;
-		} else {
+		if (!run(*devices, out, videoFilename, thumbnailName ? thumbFolder : nullptr, thumbnailName)) {
 			out << "#IGNORED " << videoFilename << std::endl;
-		}
+		} else if ((i + 1) % 25 == 0)
+			out << "#LOADED " << (i + 1) << std::endl;
+	}
+	return true;
+}
+
+bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVideoDetails, void* output) {
+	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
+	HWDevices* devices = nullptr;
+	if (!(devices = initVideoRaptor(out)))
+		return false;
+	if (length <= 0 || !fileNames || !pVideoDetails)
+		return AppError(out).write("No batch given.");
+	for (int i = 0; i < length; ++i) {
+		const char* videoFilename = fileNames[i];
+		VideoDetails* videoDetails = pVideoDetails[i];
+		if (!videoFilename)
+			continue;
+		if (!getVideoDetails(*devices, out, videoFilename, videoDetails)) {
+			out << "#IGNORED " << videoFilename << std::endl;
+		} else if ((i + 1) % 25 == 0)
+			out << "#LOADED " << (i + 1) << std::endl;
 	}
 	return true;
 }

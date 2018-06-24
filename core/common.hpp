@@ -5,6 +5,7 @@
 #ifndef VIDEORAPTOR_COMMON_HPP
 #define VIDEORAPTOR_COMMON_HPP
 
+#include <unordered_map>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
@@ -14,46 +15,25 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libavutil/log.h>
 };
-#include <vector>
-#include <unordered_map>
-#include <sstream>
-#include <iostream>
-#include <windows.foundation.h>
-#include "lodepng.h"
+#include <core/AppError.hpp>
+#include <core/StringEncoder.hpp>
+#include <core/VideoDetails.hpp>
+#include <lodepng/lodepng.h>
 
+extern const char separator;
+extern const char otherSeparator;
 extern const AVPixelFormat PIXEL_FMT;
 extern const AVCodec* imageCodec;
 extern const char* currentFilename;
 
 void customCallback(void* avcl, int level, const char* fmt, va_list vl);
 
-struct Output {
-	std::ostringstream os;
-	char* str;
-	explicit Output(): os(), str(nullptr) {}
-	std::basic_ostream<char>& getOstream() {
-		return os;
-	}
-	char* flush() {
-		delete[] str;
-		std::string s = os.str();
-		os.str(std::string());
-		str = new char[s.length() + 1];
-		memcpy(str, s.data(), s.length());
-		str[s.length()] = '\0';
-		return str;
-	}
-	~Output() {
-		delete[] str;
-	}
-};
-
 struct HWDevices {
 	std::vector<AVHWDeviceType> available;
 	std::unordered_map<AVHWDeviceType, AVBufferRef*> loaded;
 	size_t indexUsed;
 
-	HWDevices(std::basic_ostream<char>& out): available(), loaded(), indexUsed(0) {
+	explicit HWDevices(std::basic_ostream<char>& out): available(), loaded(), indexUsed(0) {
 		AVHWDeviceType type = AV_HWDEVICE_TYPE_NONE;
 		while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE) {
 			/* I don't yet know why, but, if CUDA device is tested at a point and fail,
@@ -63,7 +43,7 @@ struct HWDevices {
 				available.push_back(type);
 		}
 		out << "#MESSAGE Found " << available.size() << " hardware acceleration device(s)";
-		if (available.size()) {
+		if (!available.empty()) {
 			out << ": " << av_hwdevice_get_type_name(available[0]);
 			for (size_t i = 1; i < available.size(); ++i)
 				out << ", " << av_hwdevice_get_type_name(available[i]);
@@ -76,64 +56,6 @@ struct HWDevices {
 			av_buffer_unref(&it->second);
 	}
 };
-
-class AppError {
-	std::ostringstream oss;
-	std::basic_ostream<char>& out;
-public:
-	explicit AppError(std::basic_ostream<char>& output, const char* filename = nullptr): oss(), out(output) {
-		if (filename)
-			oss << "#VIDEO_ERROR[" << filename << "]";
-		else
-			oss << "#ERROR ";
-	}
-
-	AppError& write(const char* message) {
-		oss << message;
-		return *this;
-	}
-
-	operator bool() const { return false; }
-
-	~AppError() { out << oss.str() << std::endl; }
-};
-
-enum class EncoderType { HEX, JSON };
-
-struct StringEncoder {
-	const char* str;
-	EncoderType type;
-
-	explicit StringEncoder(const char* s, EncoderType encoderType): str(s), type(encoderType) {}
-};
-
-inline std::ostream& operator<<(std::ostream& o, const StringEncoder& stringEncoder) {
-	const char* const digits = "0123456789ABCDEF";
-	o << '"';
-	const char* str = stringEncoder.str;
-	switch (stringEncoder.type) {
-		case EncoderType::HEX:
-			while (*str) {
-				unsigned char c = *str;
-				o << digits[c >> 4] << digits[c & (((unsigned int) 1 << 4) - 1)];
-				++str;
-			}
-			break;
-		case EncoderType::JSON:
-			while (*str) {
-				if (*str == '"')
-					o << "\\\"";
-				else if (*str == '\\')
-					o << "\\\\";
-				else
-					o << *str;
-				++str;
-			}
-			break;
-	}
-	o << '"';
-	return o;
-}
 
 struct ThumbnailContext {
 	AVFrame* tmpFrame; // either frame or swFrame.
@@ -165,7 +87,7 @@ struct ThumbnailContext {
 
 };
 
-struct StreamInfo {
+struct Stream {
 	int index;
 	AVStream* stream;
 	AVCodec* codec;
@@ -175,7 +97,7 @@ struct StreamInfo {
 	const AVCodecHWConfig* selectedConfig;
 	bool deviceError;
 
-	StreamInfo(std::basic_ostream<char>& output):
+	explicit Stream(std::basic_ostream<char>& output):
 			index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr),
 			deviceError(false), selectedConfig(nullptr), out(output) {}
 
@@ -270,7 +192,7 @@ struct StreamInfo {
 	}
 
 	static AVPixelFormat get_hw_format(AVCodecContext* ctx, const AVPixelFormat* pix_fmts) {
-		StreamInfo* streamInfo = (StreamInfo*) ctx->opaque;
+		Stream* streamInfo = (Stream*) ctx->opaque;
 		if (!streamInfo->getHWFormat(pix_fmts)) {
 			streamInfo->deviceError = true;
 			return AV_PIX_FMT_NONE;
@@ -279,11 +201,11 @@ struct StreamInfo {
 	}
 };
 
-class VideoInfo {
+class Video {
 	const char* filename;
 	AVFormatContext* format;
-	StreamInfo audioStream;
-	StreamInfo videoStream;
+	Stream audioStream;
+	Stream videoStream;
 	std::basic_ostream<char>& out;
 
 	bool savePNG(AVFrame* pFrame, const std::string& thumbnailPath) {
@@ -303,6 +225,17 @@ class VideoInfo {
 	}
 
 public:
+
+	explicit Video(std::basic_ostream<char>& output):
+			filename(nullptr), format(nullptr), audioStream(output), videoStream(output), out(output) {}
+
+	~Video() {
+		if (format) {
+			videoStream.clear();
+			audioStream.clear();
+			avformat_close_input(&format);
+		}
+	}
 
 	bool generateThumbnail(const std::string& thumbnailPath) {
 		ThumbnailContext thCtx;
@@ -411,41 +344,55 @@ public:
 		return videoStream.deviceError;
 	}
 
-	VideoInfo(std::basic_ostream<char>& output):
-			filename(nullptr), format(nullptr), audioStream(output), videoStream(output), out(output) {}
-
-	~VideoInfo() {
-		if (format) {
-			videoStream.clear();
-			audioStream.clear();
-			avformat_close_input(&format);
+	void extractInfo(VideoDetails* videoDetails) {
+		clearDetails(videoDetails);
+		initDetails(videoDetails);
+		AVRational* frame_rate = &videoStream.stream->avg_frame_rate;
+		if (!frame_rate->den)
+			frame_rate = &videoStream.stream->r_frame_rate;
+		videoDetails->filename = copyString(filename);
+		videoDetails->duration = format->duration;
+		videoDetails->duration_time_base = AV_TIME_BASE;
+		videoDetails->size = avio_size(format->pb);
+		videoDetails->container_format = copyString(format->iformat->long_name);
+		videoDetails->width = videoStream.codecContext->width;
+		videoDetails->height = videoStream.codecContext->height;
+		videoDetails->video_codec = copyString(videoStream.codec->long_name);
+		videoDetails->frame_rate_num = frame_rate->num;
+		videoDetails->frame_rate_den = frame_rate->den;
+		if (audioStream.index >= 0) {
+			videoDetails->audio_codec = copyString(audioStream.codec->long_name);
+			videoDetails->sample_rate = audioStream.codecContext->sample_rate;
+			videoDetails->bit_rate = audioStream.codecContext->bit_rate;
 		}
+		if (AVDictionaryEntry* tag = av_dict_get(format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX))
+			videoDetails->title = StringEncoder(tag->value, EncoderType::HEX).encode();
 	}
 
-	friend std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo);
+	friend std::ostream& operator<<(std::ostream&, const Video&);
 };
 
-inline std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
-	AVRational* frame_rate = &videoInfo.videoStream.stream->avg_frame_rate;
+inline std::ostream& operator<<(std::ostream& o, const Video& video) {
+	AVRational* frame_rate = &video.videoStream.stream->avg_frame_rate;
 	if (!frame_rate->den)
-		frame_rate = &videoInfo.videoStream.stream->r_frame_rate;
+		frame_rate = &video.videoStream.stream->r_frame_rate;
 	o << '{';
-	o << R"("filename":)" << StringEncoder(videoInfo.filename, EncoderType::JSON) << ',';
-	o << R"("duration":)" << videoInfo.format->duration << ',';
+	o << R"("filename":)" << StringEncoder(video.filename, EncoderType::JSON) << ',';
+	o << R"("duration":)" << video.format->duration << ',';
 	o << R"("duration_time_base":)" << AV_TIME_BASE << ',';
-	o << R"("size":)" << avio_size(videoInfo.format->pb) << ',';
-	o << R"("container_format":)" << StringEncoder(videoInfo.format->iformat->long_name, EncoderType::JSON) << ',';
-	o << R"("width":)" << videoInfo.videoStream.codecContext->width << ',';
-	o << R"("height":)" << videoInfo.videoStream.codecContext->height << ',';
-	o << R"("video_codec":)" << StringEncoder(videoInfo.videoStream.codec->long_name, EncoderType::JSON) << ',';
+	o << R"("size":)" << avio_size(video.format->pb) << ',';
+	o << R"("container_format":)" << StringEncoder(video.format->iformat->long_name, EncoderType::JSON) << ',';
+	o << R"("width":)" << video.videoStream.codecContext->width << ',';
+	o << R"("height":)" << video.videoStream.codecContext->height << ',';
+	o << R"("video_codec":)" << StringEncoder(video.videoStream.codec->long_name, EncoderType::JSON) << ',';
 	o << R"("frame_rate":")" << frame_rate->num << '/' << frame_rate->den << '"';
-	if (videoInfo.audioStream.index >= 0) {
+	if (video.audioStream.index >= 0) {
 		o << ',';
-		o << R"("audio_codec":)" << StringEncoder(videoInfo.audioStream.codec->long_name, EncoderType::JSON) << ',';
-		o << R"("sample_rate":)" << videoInfo.audioStream.codecContext->sample_rate << ',';
-		o << R"("bit_rate":)" << videoInfo.audioStream.codecContext->bit_rate;
+		o << R"("audio_codec":)" << StringEncoder(video.audioStream.codec->long_name, EncoderType::JSON) << ',';
+		o << R"("sample_rate":)" << video.audioStream.codecContext->sample_rate << ',';
+		o << R"("bit_rate":)" << video.audioStream.codecContext->bit_rate;
 	}
-	AVDictionaryEntry* tag = av_dict_get(videoInfo.format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX);
+	AVDictionaryEntry* tag = av_dict_get(video.format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX);
 	if (tag)
 		o << ',' << R"("title":)" << StringEncoder(tag->value, EncoderType::HEX);
 	o << '}';
@@ -454,14 +401,9 @@ inline std::ostream& operator<<(std::ostream& o, const VideoInfo& videoInfo) {
 
 inline bool run(HWDevices& devices, std::basic_ostream<char>& out,
 				const char* filename, const char* thFolder, const char* thName) {
-#ifdef WIN32
-	const char separator = '\\', otherSeparator = '/';
-#else
-	const char separator = '/', otherSeparator = '\\';
-#endif
 	size_t deviceIndex = devices.indexUsed;
-	do {
-		VideoInfo videoInfo(out);
+	while (deviceIndex < devices.available.size()) {
+		Video videoInfo(out);
 		if (!videoInfo.load(filename, devices, deviceIndex)) {
 			if (videoInfo.hasDeviceError()) {
 				out << "#WARNING Device error when loading video." << std::endl;
@@ -471,7 +413,9 @@ inline bool run(HWDevices& devices, std::basic_ostream<char>& out,
 			return false;
 		}
 		devices.indexUsed = deviceIndex;
-		if (thFolder) {
+		if (!thFolder) {
+			out << videoInfo << std::endl; // Print video info.
+		} else {
 			if (!thName)
 				return AppError(out, filename).write("Cannot generate thumbnail without thumbnail name.");
 			std::string thumbnailPath = thFolder;
@@ -494,12 +438,29 @@ inline bool run(HWDevices& devices, std::basic_ostream<char>& out,
 				}
 				return false;
 			};
-		} else {
-			// Print video info.
-			out << videoInfo << std::endl;
 		}
 		return true;
-	} while (deviceIndex < devices.available.size());
+	};
+	return false;
+}
+
+inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out,
+							const char* filename, VideoDetails* videoDetails) {
+	size_t deviceIndex = devices.indexUsed;
+	while (deviceIndex < devices.available.size()) {
+		Video videoInfo(out);
+		if (!videoInfo.load(filename, devices, deviceIndex)) {
+			if (videoInfo.hasDeviceError()) {
+				out << "#WARNING Device error when loading video." << std::endl;
+				++deviceIndex;
+				continue;
+			}
+			return false;
+		}
+		devices.indexUsed = deviceIndex;
+		videoInfo.extractInfo(videoDetails);
+		return true;
+	};
 	return false;
 }
 
