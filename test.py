@@ -28,7 +28,7 @@ class VideoDetails(Structure):
     def __str__(self):
         string_view = ''
         for (field_name, _) in self._fields_:
-            string_view += '%s;\n' % (getattr(self, field_name))
+            string_view += '%s: %s\n' % (field_name, getattr(self, field_name))
         return string_view
 
 ARR_LENGTH = 4
@@ -66,5 +66,4 @@ print('==========', res, '==========')
 print(result.decode())
 for detail in details:
     print(detail)
-    print(detail.filename)
 print('==========')
