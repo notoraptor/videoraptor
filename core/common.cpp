@@ -2,6 +2,8 @@
 // Created by notoraptor on 27/05/2018.
 //
 #include <iostream>
+#include <mutex>
+#include <core/Output.hpp>
 #include "common.hpp"
 
 #ifdef WIN32
@@ -19,6 +21,23 @@ const AVCodec* imageCodec = nullptr;
 const char* currentFilename = nullptr;
 bool initialized = false;
 
+std::mutex loggerMutex;
+
+std::ostringstream& videoRaptorLogger(char** outputString) {
+	static Output output;
+	if (outputString)
+		*outputString = output.flush();
+	return output.os;
+}
+
+void lockLogger() {
+	loggerMutex.lock();
+}
+
+void unlockLogger() {
+	loggerMutex.unlock();
+}
+
 void customCallback(void* avcl, int level, const char* fmt, va_list vl) {
 	if (level < av_log_get_level() && currentFilename) {
 		char currentMessage[2048] = {};
@@ -27,7 +46,9 @@ void customCallback(void* avcl, int level, const char* fmt, va_list vl) {
 			if (character == '\r' || character == '\n')
 				character = ' ';
 		}
-		std::cout << "#VIDEO_WARNING[" << currentFilename << "]" << currentMessage << std::endl;
+		loggerMutex.lock();
+		videoRaptorLogger(nullptr) << "#VIDEO_WARNING[" << currentFilename << "]" << currentMessage << std::endl;
+		loggerMutex.unlock();
 	}
 }
 

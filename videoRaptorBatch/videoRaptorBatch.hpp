@@ -11,6 +11,7 @@ extern "C" {
 	void* createOutput();
 	const char* outputToString(void*);
 	void deleteOutput(void*);
+	char* flushLogger();
 	bool videoRaptorBatch(int length, const char** fileNames,
 						  const char** thumbNames, const char* thumbFolder, void* output);
 	bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVideoDetails, void* output);

@@ -466,4 +466,8 @@ inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out,
 
 HWDevices* initVideoRaptor(std::basic_ostream<char>& out);
 
+std::ostringstream& videoRaptorLogger(char**);
+void lockLogger();
+void unlockLogger();
+
 #endif //VIDEORAPTOR_COMMON_HPP

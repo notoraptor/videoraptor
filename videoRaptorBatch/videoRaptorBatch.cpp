@@ -43,6 +43,15 @@ void deleteOutput(void* out) {
 	delete (Output*)out;
 }
 
+char* flushLogger() {
+	char* stringBuffer = nullptr;
+	lockLogger();
+	videoRaptorLogger(&stringBuffer);
+	unlockLogger();
+	return stringBuffer;
+}
+
+
 bool videoRaptorBatch(int length, const char** fileNames, const char** thumbNames,
 					  const char* thumbFolder, void* output) {
 	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
