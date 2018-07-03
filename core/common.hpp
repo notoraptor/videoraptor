@@ -366,7 +366,7 @@ public:
 			videoDetails->bit_rate = audioStream.codecContext->bit_rate;
 		}
 		if (AVDictionaryEntry* tag = av_dict_get(format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX))
-			videoDetails->title = StringEncoder(tag->value, EncoderType::HEX).encode();
+			videoDetails->title = copyString(tag->value);
 	}
 
 	friend std::ostream& operator<<(std::ostream&, const Video&);

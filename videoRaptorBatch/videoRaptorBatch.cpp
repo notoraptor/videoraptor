@@ -51,7 +51,6 @@ char* flushLogger() {
 	return stringBuffer;
 }
 
-
 bool videoRaptorBatch(int length, const char** fileNames, const char** thumbNames,
 					  const char* thumbFolder, void* output) {
 	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
