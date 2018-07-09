@@ -106,8 +106,9 @@ struct Stream {
 			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
 			if (!config) {
 				deviceError = true;
-				return AppError(out).write("Unable to find device config for codec ")
-						.write(av_hwdevice_get_type_name(deviceType));
+				return AppError(out).write("Unable to find device config for device type ")
+						.write(av_hwdevice_get_type_name(deviceType))
+						.write(" and codec ").write(codec->name);
 			}
 			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == deviceType) {
 				selectedConfig = config;

@@ -17,7 +17,6 @@
  *   Some messages and warnings may be written in stdout:
  *     #ERROR <error_message>
  *     #FINISHED <integer>
- *     #IGNORED <video_filename>
  *     #LOADED <integer>
  *     #MESSAGE <message>
  *     #USAGE <help message>

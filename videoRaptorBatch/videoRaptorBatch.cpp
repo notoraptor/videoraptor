@@ -64,9 +64,8 @@ bool videoRaptorBatch(int length, const char** fileNames, const char** thumbName
 		const char* thumbnailName = thumbFolder ? thumbNames[i] : nullptr;
 		if (!videoFilename)
 			continue;
-		if (!run(*devices, out, videoFilename, thumbnailName ? thumbFolder : nullptr, thumbnailName)) {
-			out << "#IGNORED " << videoFilename << std::endl;
-		} else if ((i + 1) % 25 == 0)
+		if (run(*devices, out, videoFilename, thumbnailName ? thumbFolder : nullptr, thumbnailName)
+			&& (i + 1) % 25 == 0)
 			out << "#LOADED " << (i + 1) << std::endl;
 	}
 	return true;
@@ -84,9 +83,7 @@ bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVide
 		VideoDetails* videoDetails = pVideoDetails[i];
 		if (!videoFilename)
 			continue;
-		if (!getVideoDetails(*devices, out, videoFilename, videoDetails)) {
-			out << "#IGNORED " << videoFilename << std::endl;
-		} else if ((i + 1) % 25 == 0)
+		if (getVideoDetails(*devices, out, videoFilename, videoDetails) && (i + 1) % 25 == 0)
 			out << "#LOADED " << (i + 1) << std::endl;
 	}
 	return true;
@@ -121,11 +118,10 @@ bool videoRaptorTxtFile(const char* filename, void* output) {
 					thumbnailName = line.c_str() + posTab2 + 1;
 				}
 			}
-			if (videoFilename && run(*devices, out, videoFilename, thumbnailFolder, thumbnailName)) {
-				if ((++count) % 25 == 0)
-					out << "#LOADED " << count << std::endl;
-			} else
-				out << "#IGNORED " << line << std::endl;
+			if (videoFilename
+				&& run(*devices, out, videoFilename, thumbnailFolder, thumbnailName)
+				&& (++count) % 25 == 0)
+				out << "#LOADED " << count << std::endl;
 		}
 	}
 	out << "#FINISHED " << count << std::endl;
