@@ -462,7 +462,12 @@ inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out,
 		videoInfo.extractInfo(videoDetails);
 		return true;
 	};
-	return false;
+	out << "#VIDEO_WARNING[" << filename << "] Opened without device codec." << std::endl;
+	Video videoInfo(out);
+	if (!videoInfo.load(filename, devices, deviceIndex))
+		return false;
+	videoInfo.extractInfo(videoDetails);
+	return true;
 }
 
 HWDevices* initVideoRaptor(std::basic_ostream<char>& out);

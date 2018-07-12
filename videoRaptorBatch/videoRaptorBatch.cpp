@@ -83,6 +83,8 @@ bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVide
 		VideoDetails* videoDetails = pVideoDetails[i];
 		if (!videoFilename)
 			continue;
+		if (!videoDetails)
+			return AppError(out).write("No video details object given.");
 		if (getVideoDetails(*devices, out, videoFilename, videoDetails) && (i + 1) % 25 == 0)
 			out << "#LOADED " << (i + 1) << std::endl;
 	}
