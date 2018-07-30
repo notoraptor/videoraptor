@@ -5,31 +5,10 @@
 #include <string>
 #include <fstream>
 #include <iostream>
-#include <core/common.hpp>
+#include <core/initVideoRaptor.hpp>
 #include <core/Output.hpp>
+#include <core/Video.hpp>
 #include "videoRaptorBatch.hpp"
-
-inline void stripString(std::string& s) {
-	size_t stripLeft = std::string::npos;
-	for (size_t i = 0; i < s.length(); ++i) {
-		if (!std::isspace(s[i])) {
-			stripLeft = i;
-			break;
-		}
-	}
-	if (stripLeft == std::string::npos) {
-		s.clear();
-	} else {
-		s.erase(0, stripLeft);
-		for (size_t i = s.length(); i > 0; --i) {
-			if (!std::isspace(s[i - 1])) {
-				if (i != s.length())
-					s.erase(i);
-				break;
-			}
-		}
-	}
-}
 
 void* createOutput() {
 	return new Output();
@@ -43,36 +22,85 @@ void deleteOutput(void* out) {
 	delete (Output*)out;
 }
 
-char* flushLogger() {
-	char* stringBuffer = nullptr;
-	lockLogger();
-	videoRaptorLogger(&stringBuffer);
-	unlockLogger();
-	return stringBuffer;
+inline bool getVideoThumbnails(HWDevices &devices, std::basic_ostream<char> &out, const char *filename,
+							   const char *thFolder, const char *thName) {
+	size_t deviceIndex = devices.indexUsed;
+	while (deviceIndex < devices.available.size()) {
+		Video videoInfo(out);
+		if (!videoInfo.load(filename, devices, deviceIndex)) {
+			if (videoInfo.hasDeviceError()) {
+				out << "#WARNING Device error when loading video." << std::endl;
+				++deviceIndex;
+				continue;
+			}
+			return false;
+		}
+		// Generate thumbnail.
+		if (!videoInfo.generateThumbnail(thFolder, thName)) {
+			if (videoInfo.hasDeviceError()) {
+				out << "#WARNING Device error when generating thumbnail." << std::endl;
+				++deviceIndex;
+				continue;
+			}
+			return false;
+		};
+		devices.indexUsed = deviceIndex;
+		return true;
+	};
+	AppWarning(out, filename).write("Opened without device codec.");
+	Video videoInfo(out);
+	if (!videoInfo.load(filename, devices, deviceIndex))
+		return false;
+	return videoInfo.generateThumbnail(thFolder, thName);
 }
 
-bool videoRaptorBatch(int length, const char** fileNames, const char** thumbNames,
-					  const char* thumbFolder, void* output) {
-	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
-	HWDevices* devices = nullptr;
-	if (!(devices = initVideoRaptor(out)))
+inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out, const char* filename,
+							VideoDetails* videoDetails) {
+	size_t deviceIndex = devices.indexUsed;
+	while (deviceIndex < devices.available.size()) {
+		Video videoInfo(out);
+		if (!videoInfo.load(filename, devices, deviceIndex)) {
+			if (videoInfo.hasDeviceError()) {
+				out << "#WARNING Device error when loading video." << std::endl;
+				++deviceIndex;
+				continue;
+			}
+			return false;
+		}
+		videoInfo.extractInfo(videoDetails);
+		devices.indexUsed = deviceIndex;
+		return true;
+	};
+	AppWarning(out, filename).write("Opened without device codec.");
+	devices.indexUsed = 0;
+	Video videoInfo(out);
+	if (!videoInfo.load(filename, devices, deviceIndex))
 		return false;
-	if (length <= 0 || !fileNames)
-		return AppError(out).write("No batch given.");
-	for (int i = 0; i < length; ++i) {
-		const char* videoFilename = fileNames[i];
-		const char* thumbnailName = thumbFolder ? thumbNames[i] : nullptr;
-		if (!videoFilename)
-			continue;
-		if (run(*devices, out, videoFilename, thumbnailName ? thumbFolder : nullptr, thumbnailName)
-			&& (i + 1) % 25 == 0)
-			out << "#LOADED " << (i + 1) << std::endl;
-	}
+	videoInfo.extractInfo(videoDetails);
 	return true;
 }
 
-bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVideoDetails, void* output) {
-	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
+int videoRaptorThumbnails(int length, const char** fileNames, const char** thumbNames, const char* thumbFolder, void* output) {
+	int countGood = 0;
+	std::basic_ostream<char>& out = output ? ((Output*) output)->getStream() : (std::basic_ostream<char>&)std::cout;
+	HWDevices* devices = nullptr;
+	if (!(devices = initVideoRaptor(out)))
+		return false;
+	if (length <= 0 || !fileNames || !thumbNames || !thumbFolder)
+		return AppError(out).write("No batch given.");
+	for (int i = 0; i < length; ++i) {
+		const char* videoFilename = fileNames[i];
+		const char* thumbnailName = thumbNames[i];
+		if (!videoFilename || !thumbnailName)
+			continue;
+		countGood += getVideoThumbnails(*devices, out, videoFilename, thumbFolder, thumbnailName);
+	}
+	return countGood;
+}
+
+int videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVideoDetails, void* output) {
+	int countGood = 0;
+	std::basic_ostream<char>& out = output ? ((Output*) output)->getStream() : (std::basic_ostream<char>&)std::cout;
 	HWDevices* devices = nullptr;
 	if (!(devices = initVideoRaptor(out)))
 		return false;
@@ -81,51 +109,10 @@ bool videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVide
 	for (int i = 0; i < length; ++i) {
 		const char* videoFilename = fileNames[i];
 		VideoDetails* videoDetails = pVideoDetails[i];
-		if (!videoFilename)
+		if (!videoFilename || !videoDetails)
 			continue;
-		if (!videoDetails)
-			return AppError(out).write("No video details object given.");
-		if (getVideoDetails(*devices, out, videoFilename, videoDetails) && (i + 1) % 25 == 0)
-			out << "#LOADED " << (i + 1) << std::endl;
+		countGood += getVideoDetails(*devices, out, videoFilename, videoDetails);
 	}
-	return true;
+	return countGood;
 }
 
-bool videoRaptorTxtFile(const char* filename, void* output) {
-	HWDevices* devices = nullptr;
-	std::ifstream textFile(filename);
-	std::string line;
-	size_t count = 0;
-	std::basic_ostream<char>& out = output ? ((Output*)output)->getOstream() : (std::basic_ostream<char>&)std::cout;
-	if (!(devices = initVideoRaptor(out)))
-		return false;
-	if (!textFile)
-		return AppError(out).write("Invalid file name ").write(filename);
-	while (std::getline(textFile, line)) {
-		stripString(line);
-		if (!line.empty() && line[0] != '#') {
-			size_t posTab1 = line.find('\t', 0);
-			size_t posTab2 = (posTab1 != std::string::npos) ? line.find('\t', posTab1 + 1) : std::string::npos;
-			const char* videoFilename = line.c_str();
-			const char* thumbnailFolder = nullptr;
-			const char* thumbnailName = nullptr;
-			if (posTab1 != std::string::npos) {
-				if (posTab2 == std::string::npos) {
-					out << "#ERROR line " << line << std::endl;
-					out << "#ERROR Bad syntax (expected 3 columns separated by a tab)." << std::endl;
-					videoFilename = nullptr;
-				} else {
-					line[posTab1] = line[posTab2] = '\0';
-					thumbnailFolder = line.c_str() + posTab1 + 1;
-					thumbnailName = line.c_str() + posTab2 + 1;
-				}
-			}
-			if (videoFilename
-				&& run(*devices, out, videoFilename, thumbnailFolder, thumbnailName)
-				&& (++count) % 25 == 0)
-				out << "#LOADED " << count << std::endl;
-		}
-	}
-	out << "#FINISHED " << count << std::endl;
-	return true;
-}

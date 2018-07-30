@@ -2,8 +2,8 @@
 // Created by notoraptor on 23/06/2018.
 //
 
-#ifndef VIDEORAPTOR_VIDEODETAILS_HPP
-#define VIDEORAPTOR_VIDEODETAILS_HPP
+#ifndef VIDEORAPTOR_VIDEO_DETAILS_HPP
+#define VIDEORAPTOR_VIDEO_DETAILS_HPP
 
 #include <cstdint>
 #include <cstring>
@@ -82,4 +82,4 @@ inline char* copyString(const char* initialString) {
 	return stringCopy;
 }
 
-#endif //VIDEORAPTOR_VIDEODETAILS_HPP
+#endif //VIDEORAPTOR_VIDEO_DETAILS_HPP
