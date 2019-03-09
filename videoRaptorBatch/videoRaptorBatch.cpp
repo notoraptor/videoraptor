@@ -22,8 +22,7 @@ void deleteOutput(void* out) {
 	delete (Output*)out;
 }
 
-inline bool getVideoThumbnails(HWDevices &devices, std::basic_ostream<char> &out, const char *filename,
-							   const char *thFolder, const char *thName) {
+inline bool getVideoThumbnails(HWDevices &devices, std::basic_ostream<char> &out, const char *filename, const char *thFolder, const char *thName) {
 	size_t deviceIndex = devices.indexUsed;
 	while (deviceIndex < devices.available.size()) {
 		Video videoInfo(out);
@@ -54,8 +53,7 @@ inline bool getVideoThumbnails(HWDevices &devices, std::basic_ostream<char> &out
 	return videoInfo.generateThumbnail(thFolder, thName);
 }
 
-inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out, const char* filename,
-							VideoDetails* videoDetails) {
+inline bool getVideoDetails(HWDevices& devices, std::basic_ostream<char>& out, const char* filename, VideoDetails* videoDetails) {
 	size_t deviceIndex = devices.indexUsed;
 	while (deviceIndex < devices.available.size()) {
 		Video videoInfo(out);
