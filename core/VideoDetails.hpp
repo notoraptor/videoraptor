@@ -9,8 +9,15 @@
 #include <cstring>
 #include <iostream>
 
+#define ERROR_DETAIL_MAX_LENGTH 64
+
+struct VideoErrors {
+	unsigned int errors;
+	char errorDetail[ERROR_DETAIL_MAX_LENGTH];
+};
+
 struct VideoDetails {
-	char* filename;
+	const char* filename;
 	char* title;
 	char* container_format;
 	char* audio_codec;
@@ -24,9 +31,22 @@ struct VideoDetails {
 	int64_t duration_time_base;
 	int64_t size;
 	int64_t bit_rate;
+	bool done;
+	VideoErrors errors;
 };
 
-inline void initDetails(VideoDetails* videoDetails) {
+struct VideoThumbnailInfo {
+	const char* filename;
+	const char* thumbnailName;
+	VideoErrors errors;
+};
+
+inline void VideoErrors_init(VideoErrors* videoErrors) {
+	videoErrors->errors = 0;
+	videoErrors->errorDetail[0] = '\0';
+}
+
+inline void VideoDetails_init(VideoDetails* videoDetails) {
 	videoDetails->filename = nullptr;
 	videoDetails->title = nullptr;
 	videoDetails->container_format = nullptr;
@@ -41,6 +61,8 @@ inline void initDetails(VideoDetails* videoDetails) {
 	videoDetails->duration_time_base = 0;
 	videoDetails->size = 0;
 	videoDetails->bit_rate = 0;
+	videoDetails->done = false;
+	VideoErrors_init(&videoDetails->errors);
 }
 
 inline void clearDetails(VideoDetails* videoDetails) {
@@ -56,6 +78,19 @@ inline char* copyString(const char* initialString) {
 	char* stringCopy = new char[stringLength + 1];
 	memcpy(stringCopy, initialString, stringLength + 1);
 	return stringCopy;
+}
+
+
+inline bool videoRaptorError(VideoErrors* videoErrors, unsigned int errorCode, const char* errorDetail = nullptr) {
+	videoErrors->errors |= errorCode;
+	if (errorDetail) {
+		snprintf(videoErrors->errorDetail, ERROR_DETAIL_MAX_LENGTH, errorDetail);
+	}
+	return false;
+}
+
+inline bool videoRaptorError(VideoDetails* videoDetails, unsigned int errorCode, const char* errorDetail = nullptr) {
+	return videoRaptorError(&videoDetails->errors, errorCode, errorDetail);
 }
 
 #endif //VIDEORAPTOR_VIDEO_DETAILS_HPP

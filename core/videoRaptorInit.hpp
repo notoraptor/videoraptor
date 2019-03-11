@@ -7,6 +7,6 @@
 
 #include "HWDevices.hpp"
 
-HWDevices* initVideoRaptor(std::basic_ostream<char>& out);
+int videoRaptorInit(HWDevices** output);
 
 #endif //VIDEORAPTOR_INIT_HPP

@@ -8,11 +8,8 @@
 #include <core/VideoDetails.hpp>
 
 extern "C" {
-	void* createOutput();
-	const char* outputToString(void*);
-	void deleteOutput(void*);
-	int videoRaptorDetails(int length, const char** fileNames, VideoDetails** pVideoDetails, void* output);
-	int videoRaptorThumbnails(int length, const char** fileNames, const char** thumbNames, const char* thumbFolder, void* output);
+	int videoRaptorDetails(int length, VideoDetails** pVideoDetails);
+	int videoRaptorThumbnails(int length, VideoThumbnailInfo** pVideoThumbnailInfo, const char* thumbFolder);
 };
 
 

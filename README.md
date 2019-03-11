@@ -11,4 +11,4 @@
 
 `cd cmake-build-release`
 
-`g++ ..\test.cpp ..\videoRaptorBatch\videoRaptorBatch.* ..\lib\lodepng\lodepng.* ..\lib\utf\utf.hpp ..\core\* -o test -I .. -I %CPATH% -L %LIBRARY_PATH% -lavcodec -lavformat -lavutil -lswscale -03`
+`g++ ..\test.cpp ..\videoRaptorBatch\videoRaptorBatch.* ..\lib\lodepng\lodepng.* ..\lib\utf\utf.hpp ..\core\* -o test -I .. -I %CPATH% -L %LIBRARY_PATH% -lavcodec -lavformat -lavutil -lswscale -O3`

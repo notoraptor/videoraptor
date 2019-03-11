@@ -4,6 +4,8 @@
 
 #include <videoRaptorBatch/videoRaptorBatch.hpp>
 #include <sstream>
+#include <core/videoRaptorInit.hpp>
+#include <core/errorCodes.hpp>
 
 inline void printDetails(VideoDetails* videoDetails) {
 	std::cout << "BEGIN DETAILS" << std::endl;
@@ -31,15 +33,51 @@ inline void printDetails(VideoDetails* videoDetails) {
 
 void test(const char* filename, const char* thumbName = nullptr) {
 	VideoDetails videoDetails;
+	VideoThumbnailInfo videoThumbnailInfo;
+	videoDetails.filename = filename;
+	videoThumbnailInfo.filename = filename;
+	videoThumbnailInfo.thumbnailName = thumbName;
 	VideoDetails* pVideoDetails = &videoDetails;
-	if (videoRaptorDetails(1, &filename, &pVideoDetails, nullptr)) {
+	VideoThumbnailInfo* pVideoThumbnailInfo = &videoThumbnailInfo;
+	if (videoRaptorDetails(1, &pVideoDetails)) {
 		printDetails(pVideoDetails);
-		if (thumbName && videoRaptorThumbnails(1, &filename, &thumbName, ".", nullptr))
+		if (thumbName && videoRaptorThumbnails(1, &pVideoThumbnailInfo, "."))
 			std::cout << "Thumbnail created: " << thumbName << ".png" << std::endl;
 	}
 }
 
+void printHWDT() {
+	HWDevices* d;
+	int e = videoRaptorInit(&d);
+	if (e == ERROR_CODE_OK) {
+		std::cout << d->countDeviceTypes() << std::endl;
+		const char* sep = ", ";
+		size_t t = d->getStringRepresentationLength(sep);
+		if (t) {
+			std::vector<char> s(t, ' ');
+			d->getStringRepresentation(s.data(), sep);
+			std::cout << s.data() << std::endl;
+		}
+	}
+}
+
+char* hwDeviceNames() {
+	char* output = nullptr;
+	HWDevices* hwDevices;
+	int e = videoRaptorInit(&hwDevices);
+	if (e == ERROR_CODE_OK) {
+		const char* sep = ", ";
+		size_t stringRepresentationLength = hwDevices->getStringRepresentationLength(sep);
+		if (stringRepresentationLength) {
+			output = (char*) malloc(stringRepresentationLength);
+			hwDevices->getStringRepresentation(output, sep);
+		}
+	}
+	return output;
+}
+
 int main(int lenArgs, char* args[]) {
+	printHWDT();
 	if (lenArgs > 1) {
 		for (int i = 1; i < lenArgs; ++i) {
 			std::ostringstream oss;
