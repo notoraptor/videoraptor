@@ -3,3 +3,4 @@
 cmake-build-*
 *.gch
 *.log
+*.png

@@ -5,17 +5,26 @@
 #include <string>
 #include <fstream>
 #include <iostream>
-#include <core/videoRaptorInit.hpp>
-#include <core/Output.hpp>
 #include <core/Video.hpp>
 #include <core/errorCodes.hpp>
 #include "videoRaptorBatch.hpp"
 
-inline bool getVideoThumbnails(HWDevices &devices, VideoThumbnailInfo* videoThumbnailInfo, const char *thFolder) {
+typedef bool (*VideoWorkerFunction)(Video* video, void* context);
+
+bool videoWorkerForInfo(Video* video, void* context) {
+	video->extractInfo((VideoInfo*)context);
+	return true;
+}
+
+bool videoWorkerForThumbnail(Video* video, void* context) {
+	auto videoThumbnail = (VideoThumbnail*)context;
+	return video->generateThumbnail(videoThumbnail->thumbnailFolder, videoThumbnail->thumbnailName);
+}
+
+bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoLog* videoLog, void* videoContext, VideoWorkerFunction videoWorkerFunction) {
 	for (size_t i = 0; i < devices.available.size(); ++i) {
 		size_t indexToUse = (devices.indexUsed + i) % devices.available.size();
-		VideoErrors_init(&videoThumbnailInfo->errors);
-		Video videoInfo(videoThumbnailInfo->filename, &videoThumbnailInfo->errors, devices, deviceIndex);
+		Video videoInfo(videoFilename, videoLog, devices, indexToUse);
 		if (!videoInfo) {
 			if (videoInfo.hasDeviceError()) {
 				// Device error when loading video: move to next loop step.
@@ -24,90 +33,58 @@ inline bool getVideoThumbnails(HWDevices &devices, VideoThumbnailInfo* videoThum
 			// Fatal error (no device error). Stop.
 			return false;
 		}
-		// Video loaded.
-		// Generate thumbnail.
-		if (!videoInfo.generateThumbnail(thFolder, videoThumbnailInfo->thumbnailName)) {
+		// Video loaded. Do work.
+		if (!videoWorkerFunction(&videoInfo, videoContext)) {
 			if (videoInfo.hasDeviceError()) {
-				// Device error when generating thumbnail: move to next loop step.
+				// Device error when working: move to next loop step.
 				continue;
 			}
 			// Fatal error (no device error). Stop.
 			return false;
-		};
+		}
 		// Update HW device index used.
 		devices.indexUsed = indexToUse;
 		return true;
 	};
 	// Device error for all devices. Don't use devices.
-	videoRaptorError(&videoThumbnailInfo->errors, WARNING_NO_DEVICE_CODEC);
-	devices.indexUsed = 0;
-	Video videoInfo(videoThumbnailInfo->filename, &videoThumbnailInfo->errors, devices, devices.indexUsed);
+	VideoLog_error(videoLog, WARNING_NO_DEVICE_CODEC);
+	// Set index to invalid value.
+	devices.indexUsed = devices.available.size();
+	Video videoInfo(videoFilename, videoLog, devices, devices.indexUsed);
 	if (!videoInfo)
 		return false;
-	return videoInfo.generateThumbnail(thFolder, videoThumbnailInfo->thumbnailName);
+	return videoWorkerFunction(&videoInfo, videoContext);
 }
 
-inline bool getVideoDetails(HWDevices& devices, VideoDetails* videoDetails) {
-	for (size_t i = 0; i < devices.available.size(); ++i) {
-		size_t indexToUse = (devices.indexUsed + i) % devices.available.size();
-		VideoErrors_init(&videoDetails->errors);
-		Video videoInfo(videoDetails->filename, &videoDetails->errors, devices, indexToUse);
-		if (!videoInfo) {
-			if (videoInfo.hasDeviceError()) {
-				// Device error when loading video: move to next loop step.
-				continue;
-			}
-			// Fatal error (no device error). Stop.
-			return false;
-		}
-		// Video loaded.
-		videoInfo.extractInfo(videoDetails);
-		// Update HW device index used.
-		devices.indexUsed = indexToUse;
-		// Work done.
-		return true;
-	}
-	// Device error for all devices. Don't use devices.
-	videoRaptorError(videoDetails, WARNING_NO_DEVICE_CODEC);
-	devices.indexUsed = 0;
-	VideoErrors_init(&videoDetails->errors);
-	Video videoInfo(videoDetails->filename, &videoDetails->errors, devices, devices.indexUsed);
-	if (!videoInfo)
-		return false;
-	videoInfo.extractInfo(videoDetails);
-	return true;
-}
-
-int videoRaptorThumbnails(int length, VideoThumbnailInfo** pVideoThumbnailInfo, const char* thumbFolder) {
-	if (length <= 0 || !pVideoThumbnailInfo || !thumbFolder)
-		return ERROR_NO_BATCH_GIVEN;
-	HWDevices* devices = nullptr;
-	int initStatus = videoRaptorInit(&devices);
-	if (initStatus != ERROR_CODE_OK)
-		return initStatus;
+int videoRaptorThumbnails(int length, VideoThumbnail** pVideoThumbnail) {
+	if (length <= 0 || !pVideoThumbnail)
+		return 0;
+	HWDevices* devices = getHardwareDevices();
+	int countLoaded = 0;
 	for (int i = 0; i < length; ++i) {
-		VideoThumbnailInfo* videoThumbnailInfo = pVideoThumbnailInfo[i];
-		if (!videoThumbnailInfo || !videoThumbnailInfo->filename || !videoThumbnailInfo->thumbnailName)
-			continue;
-		getVideoThumbnails(*devices, videoThumbnailInfo, thumbFolder);
+		VideoThumbnail* videoThumbnail = pVideoThumbnail[i];
+		if (videoThumbnail
+			&& videoThumbnail->filename
+			&& videoThumbnail->thumbnailFolder
+			&& videoThumbnail->thumbnailName
+			&& workOnVideo(*devices, videoThumbnail->filename, &videoThumbnail->errors, videoThumbnail, videoWorkerForThumbnail))
+			++countLoaded;
 	}
-	return ERROR_CODE_OK;
+	return countLoaded;
 }
 
-int videoRaptorDetails(int length, VideoDetails** pVideoDetails) {
-	// Returns an error code (ERROR_CODE_OK if no error).
-	if (length <= 0 || !pVideoDetails)
-		return ERROR_NO_BATCH_GIVEN;
-	HWDevices* devices = nullptr;
-	int initStatus = videoRaptorInit(&devices);
-	if (initStatus != ERROR_CODE_OK)
-		return initStatus;
+int videoRaptorDetails(int length, VideoInfo** pVideoInfo) {
+	if (length <= 0 || !pVideoInfo)
+		return 0;
+	HWDevices* devices = getHardwareDevices();
+	int countLoaded = 0;
 	for (int i = 0; i < length; ++i) {
-		VideoDetails* videoDetails = pVideoDetails[i];
-		if (!videoDetails || !videoDetails->filename)
-			continue;
-		getVideoDetails(*devices, videoDetails);
+		VideoInfo* videoDetails = pVideoInfo[i];
+		if (videoDetails
+			&& videoDetails->filename
+			&& workOnVideo(*devices, videoDetails->filename, &videoDetails->errors, videoDetails, videoWorkerForInfo))
+			++countLoaded;
 	}
-	return ERROR_CODE_OK;
+	return countLoaded;
 }
 

@@ -15,7 +15,7 @@ extern "C" {
 #include <vector>
 #include "FileHandle.hpp"
 #include "unicode.hpp"
-#include "VideoDetails.hpp"
+#include "VideoInfo.hpp"
 #include "errorCodes.hpp"
 
 inline bool fileSize(const char* filename, size_t* out) {
@@ -69,13 +69,13 @@ struct ProbeBuffer {
 #define OPEN_ERROR_AVIO_INIT 				6	// Memory error for AVIO context initialization.
 #define OPEN_ERROR_FORMAT_CONTEXT_MEMORY 	7	// Error while allocating format context.
 
-inline bool customFormatContextError(VideoErrors* videoErrors, unsigned int localErrorCode) {
+inline bool customFormatContextError(VideoLog* videoErrors, unsigned int localErrorCode) {
 	const char* const digits = "0123456789";
 	char errorDetail[2] = {digits[localErrorCode], '\0'};
-	return videoRaptorError(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT, errorDetail);
+	return VideoLog_error(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT, errorDetail);
 }
 
-inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** format, AVIOContext** avioContext, VideoErrors* videoErrors) {
+inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** format, AVIOContext** avioContext, VideoLog* videoErrors) {
 	int ret = 0;
 	std::string errorString;
 	size_t avio_ctx_buffer_size = 4096;
@@ -88,7 +88,7 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 
 	fileHandle.file = fopen(fileHandle.filename, "rb");
 	if (!fileHandle.file) {
-		videoRaptorError(videoErrors, WARNING_OPEN_ASCII_FILENAME);
+		VideoLog_error(videoErrors, WARNING_OPEN_ASCII_FILENAME);
 		// To handle long file names, we assume file name is an absolute path, and we add prefix \\?\.
 		// See (2018/07/29): https://docs.microsoft.com/fr-fr/windows/desktop/FileIO/naming-a-file#maximum-path-length-limitation
 		fileHandle.unicodeFilename.push_back('\\');
@@ -100,7 +100,7 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 		fileHandle.file = _wfopen(fileHandle.unicodeFilename.data(), L"rb");
 	}
 	if (!fileHandle.file)
-		return videoRaptorError(videoErrors, ERROR_OPEN_FILE);
+		return VideoLog_error(videoErrors, ERROR_OPEN_FILE);
 
 	// Get input format.
 	probeBuffer.probe_buffer = (uint8_t*) av_malloc(probe_buffer_size);
@@ -142,7 +142,7 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 	if ((ret = avformat_open_input(format, NULL, NULL, NULL)) != 0) {
 		char err_buf[AV_ERROR_MAX_STRING_SIZE];
 		av_make_error_string(err_buf, AV_ERROR_MAX_STRING_SIZE, ret);
-		return videoRaptorError(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT_OPEN, err_buf);
+		return VideoLog_error(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT_OPEN, err_buf);
 	};
 	return true;
 }

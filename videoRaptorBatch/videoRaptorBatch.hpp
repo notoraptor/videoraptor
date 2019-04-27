@@ -5,11 +5,12 @@
 #ifndef VIDEORAPTOR_VIDEORAPTORBATCH_HPP
 #define VIDEORAPTOR_VIDEORAPTORBATCH_HPP
 
-#include <core/VideoDetails.hpp>
+#include <core/VideoInfo.hpp>
+#include <core/VideoThumbnail.hpp>
 
 extern "C" {
-	int videoRaptorDetails(int length, VideoDetails** pVideoDetails);
-	int videoRaptorThumbnails(int length, VideoThumbnailInfo** pVideoThumbnailInfo, const char* thumbFolder);
+	int videoRaptorDetails(int length, VideoInfo** pVideoInfo);
+	int videoRaptorThumbnails(int length, VideoThumbnail** pVideoThumbnail);
 };
 
 

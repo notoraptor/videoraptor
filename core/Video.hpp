@@ -16,12 +16,11 @@ extern "C" {
 #include "unicode.hpp"
 #include "Stream.hpp"
 #include "ThumbnailContext.hpp"
-#include "VideoDetails.hpp"
+#include "VideoInfo.hpp"
 #include "FileHandle.hpp"
+#include "errorCodes.hpp"
 #ifdef WIN32
 #include "compatWindows.hpp"
-#include "errorCodes.hpp"
-
 #endif
 
 #define THUMBNAIL_SIZE 300
@@ -32,23 +31,37 @@ class Video {
 	AVIOContext* avioContext;
 	Stream audioStream;
 	Stream videoStream;
-	VideoErrors* errors;
+	VideoLog* errors;
 	bool loaded;
+
+	bool loadInputFile() {
+#ifdef WIN32
+		// Windows.
+		return openCustomFormatContext(fileHandle, &format, &avioContext, errors);
+#else
+		// Unix. TODO Test.
+		if (avformat_open_input(&format, fileHandle.filename, NULL, NULL) != 0)
+			return VideoDetailsError(errors, ERROR_OPEN_FILE);
+		return true;
+#endif
+	}
 
 	bool load(HWDevices& devices, size_t deviceIndex) {
 		// Open video file.
-		if (!openInput())
+		if (!loadInputFile())
 			return false;
 		// Retrieve stream information.
 		if (avformat_find_stream_info(format, NULL) < 0)
-			return videoRaptorError(errors, ERROR_NO_STREAM_INFO);
+			return VideoLog_error(errors, ERROR_NO_STREAM_INFO);
 		// Load best audio and video streams.
 		if (!videoStream.load(format, AVMEDIA_TYPE_VIDEO, devices, deviceIndex))
 			return false;
-		return audioStream.load(format, AVMEDIA_TYPE_AUDIO, devices, deviceIndex) || audioStream.index < 0;
+		// Audio stream loading is optional.
+		audioStream.load(format, AVMEDIA_TYPE_AUDIO, devices, deviceIndex);
+		return true;
 	}
 
-	static std::string generateThumbnailPath(const std::string& thFolder, const std::string& thName) {
+	static std::string generateThumbnailPath(const char* thFolder, const char* thName) {
 		std::string thumbnailPath = thFolder;
 		if (!thumbnailPath.empty()) {
 			char lastChar = thumbnailPath[thumbnailPath.size() - 1];
@@ -63,19 +76,7 @@ class Video {
 		return thumbnailPath;
 	}
 
-	bool openInput() {
-#ifdef WIN32
-		// Windows.
-		return openCustomFormatContext(fileHandle, &format, &avioContext, errors);
-#else
-		// Unix. TODO Test.
-		if (avformat_open_input(&format, fileHandle.filename, NULL, NULL) != 0)
-			return VideoDetailsError(errors, ERROR_OPEN_FILE);
-		return true;
-#endif
-	}
-
-	bool savePNG(AVFrame* pFrame, const std::string& thFolder, const std::string& thName) {
+	bool savePNG(AVFrame* pFrame, const char* thFolder, const char* thName) {
 		std::vector<unsigned char> image((size_t) (pFrame->width * pFrame->height * 4));
 
 		// Write pixel data
@@ -87,14 +88,14 @@ class Video {
 				generateThumbnailPath(thFolder, thName), image, (unsigned int) pFrame->width,
 				(unsigned int) pFrame->height);
 		if (ret)
-			return videoRaptorError(errors, ERROR_PNG_ENCODER, lodepng_error_text(ret));
+			return VideoLog_error(errors, ERROR_PNG_ENCODER, lodepng_error_text(ret));
 
 		return true;
 	}
 
 public:
 
-	explicit Video(const char* filename, VideoErrors* videoErrors, HWDevices& devices, size_t deviceIndex) :
+	explicit Video(const char* filename, VideoLog* videoErrors, HWDevices& devices, size_t deviceIndex) :
 			fileHandle(filename), format(nullptr), avioContext(nullptr),
 			audioStream(videoErrors), videoStream(videoErrors), errors(videoErrors), loaded(false) {
 		loaded = load(devices, deviceIndex);
@@ -105,9 +106,9 @@ public:
 			av_freep(&avioContext->buffer);
 			avio_context_free(&avioContext);
 		}
+		videoStream.clear();
+		audioStream.clear();
 		if (format) {
-			videoStream.clear();
-			audioStream.clear();
 			avformat_close_input(&format);
 		}
 	}
@@ -116,7 +117,7 @@ public:
 		return loaded;
 	}
 
-	bool generateThumbnail(const std::string& thFolder, const std::string& thName) {
+	bool generateThumbnail(const char* thFolder, const char* thName) {
 		ThumbnailContext thCtx;
 
 		int numBytes;
@@ -137,7 +138,7 @@ public:
 
 		// seek
 		if (av_seek_frame(format, -1, format->duration / 2, AVSEEK_FLAG_BACKWARD) < 0)
-			return videoRaptorError(errors, ERROR_SEEK_VIDEO);
+			return VideoLog_error(errors, ERROR_SEEK_VIDEO);
 
 		// Read frames and save first video frame as image to disk
 		while (av_read_frame(format, &thCtx.packet) >= 0) {
@@ -146,29 +147,29 @@ public:
 				// Send packet
 				int ret = avcodec_send_packet(videoStream.codecContext, &thCtx.packet);
 				if (ret < 0)
-					return videoRaptorError(errors, ERROR_SEND_PACKET);
+					return VideoLog_error(errors, ERROR_SEND_PACKET);
 
 				// Allocate video frame
 				thCtx.frame = av_frame_alloc();
 				if (thCtx.frame == NULL)
-					return videoRaptorError(errors, ERROR_ALLOC_INPUT_FRAME);
+					return VideoLog_error(errors, ERROR_ALLOC_INPUT_FRAME);
 
 				// Receive frame.
 				ret = avcodec_receive_frame(videoStream.codecContext, thCtx.frame);
 				if (ret == AVERROR(EAGAIN))
 					continue;
 				if (ret == AVERROR_EOF || ret < 0)
-					return videoRaptorError(errors, ERROR_DECODE_VIDEO);
+					return VideoLog_error(errors, ERROR_DECODE_VIDEO);
 
 				// Set frame to save (either from decoed frame or from GPU).
 				if (videoStream.selectedConfig && thCtx.frame->format == videoStream.selectedConfig->pix_fmt) {
 					// Allocate HW video frame
 					thCtx.swFrame = av_frame_alloc();
 					if (thCtx.swFrame == NULL)
-						return videoRaptorError(errors, ERROR_ALLOC_HW_INPUT_FRAME);
+						return VideoLog_error(errors, ERROR_ALLOC_HW_INPUT_FRAME);
 					// retrieve data from GPU to CPU
 					if (av_hwframe_transfer_data(thCtx.swFrame, thCtx.frame, 0) < 0)
-						return videoRaptorError(errors, ERROR_HW_DATA_TRANSFER);
+						return VideoLog_error(errors, ERROR_HW_DATA_TRANSFER);
 					thCtx.tmpFrame = thCtx.swFrame;
 				} else {
 					thCtx.tmpFrame = thCtx.frame;
@@ -177,13 +178,13 @@ public:
 				// Allocate an AVFrame structure
 				thCtx.frameRGB = av_frame_alloc();
 				if (thCtx.frameRGB == NULL)
-					return videoRaptorError(errors, ERROR_ALLOC_OUTPUT_FRAME);
+					return VideoLog_error(errors, ERROR_ALLOC_OUTPUT_FRAME);
 
 				// Determine required buffer size and allocate buffer
 				numBytes = av_image_get_buffer_size(PIXEL_FMT, outputWidth, outputHeight, align);
 				thCtx.buffer = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t));
 				if (!thCtx.buffer)
-					return videoRaptorError(errors, ERROR_ALLOC_OUTPUT_FRAME_BUFFER);
+					return VideoLog_error(errors, ERROR_ALLOC_OUTPUT_FRAME_BUFFER);
 
 				// Assign appropriate parts of buffer to image planes in frameRGB
 				av_image_fill_arrays(thCtx.frameRGB->data, thCtx.frameRGB->linesize, thCtx.buffer,
@@ -206,16 +207,15 @@ public:
 			}
 		}
 
-		return videoRaptorError(errors, ERROR_SAVE_THUMBNAIL);
+		return VideoLog_error(errors, ERROR_SAVE_THUMBNAIL);
 	}
 
 	bool hasDeviceError() {
 		return videoStream.deviceError;
 	}
 
-	void extractInfo(VideoDetails* videoDetails) {
+	void extractInfo(VideoInfo* videoDetails) {
 		// clearDetails(errors);
-		VideoDetails_init(videoDetails);
 		AVRational* frame_rate = &videoStream.stream->avg_frame_rate;
 		if (!frame_rate->den)
 			frame_rate = &videoStream.stream->r_frame_rate;

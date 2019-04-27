@@ -4,48 +4,79 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 };
-#include "Output.hpp"
-#include "videoRaptorInit.hpp"
 #include "errorCodes.hpp"
-
-const AVCodec* imageCodec = nullptr;
-const std::string emptyString;
-
-char* Output::flush() {
-	delete[] str;
-	std::string s = oss.str();
-	oss.str(emptyString);
-	str = new char[s.length() + 1];
-	memcpy(str, s.data(), s.length());
-	str[s.length()] = '\0';
-	return str;
-}
+#include "utils.hpp"
+#include "VideoInfo.hpp"
+#include "VideoThumbnail.hpp"
+#include "VideoRaptorInfo.hpp"
 
 // Doing nothing (silent log).
 void customCallback(void* avClass, int level, const char* fmt, va_list vl) {}
 
-#define INIT_STATUS_NO -1
-#define INIT_STATUS_BAD 0
-#define INIT_STATUS_GOOD 1
-
-int videoRaptorInit(HWDevices** output) {
+HWDevices* getHardwareDevices() {
 	static HWDevices devices;
-	static int initStatus = INIT_STATUS_NO;
-	static int initError = ERROR_CODE_OK;
-	if (initStatus == INIT_STATUS_NO) {
+	static bool initialized = false;
+	if (!initialized) {
 		// Initializations.
-		// Set custom callback (is it still useful?).
+		// Set custom callback
+		// TODO (is it still useful?).
 		av_log_set_callback(customCallback);
-		// Load output image codec (for video thumbnails).
-		imageCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
-		if (imageCodec) {
-			initStatus = INIT_STATUS_GOOD;
-		} else {
-			initStatus = INIT_STATUS_BAD;
-			initError = ERROR_PNG_CODEC;
-		}
+		initialized = true;
 	}
-	if (initStatus == INIT_STATUS_GOOD && output)
-		*output = &devices;
-	return initError;
+	return &devices;
+}
+
+void VideoRaptorInfo_init(VideoRaptorInfo* videoRaptorInfo) {
+	HWDevices* devices = getHardwareDevices();
+	videoRaptorInfo->hardwareDevicesCount = devices->countDeviceTypes();
+	videoRaptorInfo->hardwareDevicesNames = nullptr;
+	const char* separator = ", ";
+	size_t outputLength = devices->getStringRepresentationLength(separator);
+	if (outputLength) {
+		videoRaptorInfo->hardwareDevicesNames = new char[outputLength];
+		devices->getStringRepresentation(videoRaptorInfo->hardwareDevicesNames, separator);
+	}
+}
+
+void VideoRaptorInfo_clear(VideoRaptorInfo* videoRaptorInfo) {
+	delete[] videoRaptorInfo->hardwareDevicesNames;
+}
+
+void VideoThumbnail_init(VideoThumbnail* videoThumbnail, const char* filename, const char* thumbnailFolder, const char* thumbnailName) {
+	videoThumbnail->filename = filename;
+	videoThumbnail->thumbnailFolder = thumbnailFolder;
+	videoThumbnail->thumbnailName = thumbnailName;
+	VideoLog_init(&videoThumbnail->errors);
+}
+
+void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
+	videoInfo->filename = filename;
+	videoInfo->title = nullptr;
+	videoInfo->container_format = nullptr;
+	videoInfo->audio_codec = nullptr;
+	videoInfo->video_codec = nullptr;
+	videoInfo->width = 0;
+	videoInfo->height = 0;
+	videoInfo->frame_rate_num = 0;
+	videoInfo->frame_rate_den = 0;
+	videoInfo->sample_rate = 0;
+	videoInfo->duration = 0;
+	videoInfo->duration_time_base = 0;
+	videoInfo->size = 0;
+	videoInfo->bit_rate = 0;
+	videoInfo->done = false;
+	VideoLog_init(&videoInfo->errors);
+}
+
+void VideoInfo_clear(VideoInfo* videoInfo) {
+	// Field `filename` is not modified.
+	// All potentially allocated fields are cleared.
+	delete[] videoInfo->title;
+	delete[] videoInfo->container_format;
+	delete[] videoInfo->audio_codec;
+	delete[] videoInfo->video_codec;
+}
+
+bool VideoInfo_error(VideoInfo* videoInfo, unsigned int errorCode, const char* errorDetail) {
+	return VideoLog_error(&videoInfo->errors, errorCode, errorDetail);
 }

@@ -9,16 +9,18 @@ link_directories($ENV{LIBRARY_PATH})
 set(COMMON_SOURCES
         core/compatWindows.hpp
         core/core.cpp
+        core/errorCodes.hpp
         core/FileHandle.hpp
         core/HWDevices.hpp
-        core/videoRaptorInit.hpp
-        core/Output.hpp
         core/Stream.hpp
         core/ThumbnailContext.hpp
         core/unicode.hpp
         core/utils.hpp
         core/Video.hpp
-        core/VideoDetails.hpp
+        core/VideoInfo.hpp
+        core/VideoLog.hpp
+        core/VideoRaptorInfo.hpp
+        core/VideoThumbnail.hpp
         lib/lodepng/lodepng.cpp
         lib/lodepng/lodepng.h
         lib/utf/utf.hpp
@@ -26,9 +28,8 @@ set(COMMON_SOURCES
         videoRaptorBatch/videoRaptorBatch.hpp
         )
 set(TEST_SOURCES
-        test.cpp
-        core/errorCodes.hpp)
-add_library(videoRaptorBatch MODULE ${COMMON_SOURCES} core/errorCodes.hpp)
+        test.cpp)
+add_library(videoRaptorBatch MODULE ${COMMON_SOURCES})
 add_executable(test ${COMMON_SOURCES} ${TEST_SOURCES})
 
 target_link_libraries(videoRaptorBatch avcodec avformat avutil swscale)
