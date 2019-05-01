@@ -13,7 +13,6 @@ extern "C" {
 }
 #include "HWDevices.hpp"
 #include "VideoInfo.hpp"
-#include "errorCodes.hpp"
 
 struct Stream {
 	int index;
@@ -22,7 +21,7 @@ struct Stream {
 	AVCodecContext* codecContext;
 	const AVCodecHWConfig* selectedConfig;
 	bool deviceError;
-	VideoLog* errors;
+	VideoReport* report;
 
 private:
 
@@ -31,7 +30,7 @@ private:
 			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
 			if (!config) {
 				deviceError = true;
-				return VideoLog_error(errors, WARNING_FIND_DEVICE_CONFIG);
+				return VideoReport_error(report, WARNING_FIND_DEVICE_CONFIG);
 			}
 			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == deviceType) {
 				selectedConfig = config;
@@ -48,7 +47,7 @@ private:
 		AVBufferRef* hwDeviceCtx = nullptr;
 		if (av_hwdevice_ctx_create(&hwDeviceCtx, selectedConfig->device_type, NULL, NULL, 0) < 0) {
 			deviceError = true;
-			return VideoLog_error(errors, WARNING_CREATE_DEVICE_CONFIG);
+			return VideoReport_error(report, WARNING_CREATE_DEVICE_CONFIG);
 		}
 		devices.loaded[selectedConfig->device_type] = hwDeviceCtx;
 		codecContext->hw_device_ctx = av_buffer_ref(hwDeviceCtx);
@@ -65,7 +64,7 @@ private:
 			}
 		}
 
-		return VideoLog_error(errors, ERROR_HW_SURFACE_FORMAT);
+		return VideoReport_error(report, ERROR_HW_SURFACE_FORMAT);
 	}
 
 	static AVPixelFormat get_hw_format(AVCodecContext* ctx, const AVPixelFormat* pix_fmts) {
@@ -79,13 +78,13 @@ private:
 
 public:
 
-	explicit Stream(VideoLog* videoErrors):
+	explicit Stream(VideoReport* videoReport):
 			index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr),
-			selectedConfig(nullptr), deviceError(false), errors(videoErrors) {}
+			selectedConfig(nullptr), deviceError(false), report(videoReport) {}
 
 	bool load(AVFormatContext* format, AVMediaType type, HWDevices& devices, size_t deviceIndex) {
 		if ((index = av_find_best_stream(format, type, -1, -1, &codec, 0)) < 0)
-			return type == AVMEDIA_TYPE_VIDEO ? VideoLog_error(errors, ERROR_FIND_VIDEO_STREAM) : false;
+			return type == AVMEDIA_TYPE_VIDEO ? VideoReport_error(report, ERROR_FIND_VIDEO_STREAM) : false;
 		stream = format->streams[index];
 
 		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
@@ -94,9 +93,9 @@ public:
 			return false;
 
 		if (!(codecContext = avcodec_alloc_context3(codec)))
-			return VideoLog_error(errors, ERROR_ALLOC_CODEC_CONTEXT);
+			return VideoReport_error(report, ERROR_ALLOC_CODEC_CONTEXT);
 		if (avcodec_parameters_to_context(codecContext, stream->codecpar) < 0)
-			return VideoLog_error(errors, ERROR_CONVERT_CODEC_PARAMS);
+			return VideoReport_error(report, ERROR_CONVERT_CODEC_PARAMS);
 
 		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && selectedConfig) {
 			codecContext->opaque = this;
@@ -107,15 +106,15 @@ public:
 		}
 
 		if (avcodec_open2(codecContext, codec, NULL) < 0)
-			return VideoLog_error(errors, ERROR_OPEN_CODEC);
+			return VideoReport_error(report, ERROR_OPEN_CODEC);
 
 		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
 			if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
-				return VideoLog_error(errors, ERROR_INVALID_PIX_FMT);
+				return VideoReport_error(report, ERROR_INVALID_PIX_FMT);
 			if (codecContext->width <= 0)
-				return VideoLog_error(errors, ERROR_INVALID_WIDTH);
+				return VideoReport_error(report, ERROR_INVALID_WIDTH);
 			if (codecContext->height <= 0)
-				return VideoLog_error(errors, ERROR_INVALID_HEIGHT);
+				return VideoReport_error(report, ERROR_INVALID_HEIGHT);
 		}
 
 		return true;

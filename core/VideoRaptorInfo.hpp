@@ -5,9 +5,6 @@
 #ifndef VIDEORAPTOR_VIDEORAPTORINFO_HPP
 #define VIDEORAPTOR_VIDEORAPTORINFO_HPP
 
-#include "utils.hpp"
-#include "errorCodes.hpp"
-
 struct VideoRaptorInfo {
 	size_t hardwareDevicesCount;
 	char* hardwareDevicesNames;

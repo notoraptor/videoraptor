@@ -8,7 +8,7 @@
 #include <iostream>
 
 enum VideoRaptorErrors {
-	ERROR_CODE_OK						= 0b00000000000000000000000000000000,
+	SUCCESS_NOTHING						= 0b00000000000000000000000000000000,	// Nothing happened.
 	ERROR_PNG_CODEC						= 0b00000000000000000000000000000001,	// global	// PNG codec not found.
 	ERROR_NO_BATCH_GIVEN				= 0b00000000000000000000000000000010,	// global	// No batch given.
 	ERROR_NO_STREAM_INFO				= 0b00000000000000000000000000000100,	// Unable to get streams info.
@@ -37,14 +37,14 @@ enum VideoRaptorErrors {
 	WARNING_NO_DEVICE_CODEC				= 0b00000010000000000000000000000000,	// Opened without device codec.
 	ERROR_CUSTOM_FORMAT_CONTEXT			= 0b00000100000000000000000000000000,	// Error while building custom format context.
 	ERROR_CUSTOM_FORMAT_CONTEXT_OPEN	= 0b00001000000000000000000000000000,	// Error while opening custom format context.
-	ERROR_CODE_000000029				= 0b00010000000000000000000000000000,
+	SUCCESS_DONE						= 0b00010000000000000000000000000000,	// Work done.
 	ERROR_CODE_000000030				= 0b00100000000000000000000000000000,
 	ERROR_CODE_000000031				= 0b01000000000000000000000000000000,
 	ERROR_CODE_000000032				= 0b10000000000000000000000000000000,
 };
 
 inline void printError(unsigned int error) {
-	if (error & ERROR_CODE_OK) std::cout << "ERROR_CODE_OK" << std::endl;
+	if (error & SUCCESS_NOTHING) std::cout << "SUCCESS_NOTHING" << std::endl;
 	if (error & ERROR_PNG_CODEC) std::cout << "ERROR_PNG_CODEC" << std::endl;
 	if (error & ERROR_NO_BATCH_GIVEN) std::cout << "ERROR_NO_BATCH_GIVEN" << std::endl;
 	if (error & ERROR_NO_STREAM_INFO) std::cout << "ERROR_NO_STREAM_INFO" << std::endl;
@@ -73,7 +73,7 @@ inline void printError(unsigned int error) {
 	if (error & WARNING_NO_DEVICE_CODEC) std::cout << "WARNING_NO_DEVICE_CODEC" << std::endl;
 	if (error & ERROR_CUSTOM_FORMAT_CONTEXT) std::cout << "ERROR_CUSTOM_FORMAT_CONTEXT" << std::endl;
 	if (error & ERROR_CUSTOM_FORMAT_CONTEXT_OPEN) std::cout << "ERROR_CUSTOM_FORMAT_CONTEXT_OPEN" << std::endl;
-	if (error & ERROR_CODE_000000029) std::cout << "ERROR_CODE_000000029" << std::endl;
+	if (error & SUCCESS_DONE) std::cout << "SUCCESS_DONE" << std::endl;
 	if (error & ERROR_CODE_000000030) std::cout << "ERROR_CODE_000000030" << std::endl;
 	if (error & ERROR_CODE_000000031) std::cout << "ERROR_CODE_000000031" << std::endl;
 	if (error & ERROR_CODE_000000032) std::cout << "ERROR_CODE_000000032" << std::endl;

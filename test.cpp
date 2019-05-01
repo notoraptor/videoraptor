@@ -30,47 +30,71 @@ void printDetails(VideoInfo* videoDetails) {
 	std::cout << "END DETAILS" << std::endl;
 }
 
-void test(const char* filename, const char* thumbName = nullptr) {
+bool testDetails(const char* filename) {
 	VideoInfo videoDetails;
-	VideoThumbnail videoThumbnailInfo;
 	VideoInfo_init(&videoDetails, filename);
-	VideoThumbnail_init(&videoThumbnailInfo, filename, ".", thumbName);
 	VideoInfo* pVideoDetails = &videoDetails;
-	VideoThumbnail* pVideoThumbnailInfo = &videoThumbnailInfo;
-	if (videoRaptorDetails(1, &pVideoDetails)) {
-		printDetails(pVideoDetails);
-		if (videoRaptorThumbnails(1, &pVideoThumbnailInfo))
-			std::cout << "Thumbnail created: " << thumbName << ".png" << std::endl;
-		else {
-			std::cerr << "Thumbnail error occurred. " << videoThumbnailInfo.errors.errors << std::endl;
-			printError(videoThumbnailInfo.errors.errors);
-		}
-	} else {
-		std::cerr << "Error occurred. " << videoDetails.errors.errors << std::endl;
-		printError(videoDetails.errors.errors);
+	videoRaptorDetails(1, &pVideoDetails);
+	if (VideoReport_hasError(&videoDetails.report)) {
+		std::cout << "Video details: error(s) occurred (" << videoDetails.report.errors << ")." << std::endl;
+		VideoReport_print(&videoDetails.report);
+		return false;
 	}
+	if (!VideoReport_isDone(&videoDetails.report)) {
+		std::cout << "No details." << std::endl;
+		return false;
+	}
+	printDetails(&videoDetails);
 	VideoInfo_clear(&videoDetails);
+	return true;
+}
+bool testThumbnail(const char* filename, const char* thumbName) {
+	VideoThumbnail videoThumbnail;
+	VideoThumbnail_init(&videoThumbnail, filename, ".", thumbName);
+	VideoThumbnail* pVideoThumbnailInfo = &videoThumbnail;
+	videoRaptorThumbnails(1, &pVideoThumbnailInfo);
+	if (VideoReport_hasError(&videoThumbnail.report)) {
+		std::cout << "Video thumbnails: error(s) occurred (" << videoThumbnail.report.errors << ")." << std::endl;
+		VideoReport_print(&videoThumbnail.report);
+		return false;
+	}
+	if (!VideoReport_isDone(&videoThumbnail.report)) {
+		std::cout << "No thumbnail." << std::endl;
+		return false;
+	}
+	std::cout << "Thumbnail created: " << thumbName << ".png" << std::endl;
+	return true;
 }
 
-int main(int lenArgs, char* args[]) {
+void test(const char* filename, const char* thumbName) {
+	if (testDetails(filename))
+		testThumbnail(filename, thumbName);
+}
+
+void printVideoRaptorInfo() {
 	// Print info about available hardware acceleration.
 	VideoRaptorInfo videoRaptorInfo;
 	VideoRaptorInfo_init(&videoRaptorInfo);
 	std::cout << videoRaptorInfo.hardwareDevicesCount << " hardware device(s)";
 	if (videoRaptorInfo.hardwareDevicesCount)
 		std::cout << ": " << videoRaptorInfo.hardwareDevicesNames;
-	std::cout << '.' << std::endl;
+	std::cout << '.' << std::endl << std::endl;
 	VideoRaptorInfo_clear(&videoRaptorInfo);
+}
+
+int main(int lenArgs, char* args[]) {
+	// Print some info.
+	printVideoRaptorInfo();
 
 	// Parse arguments.
-	if (lenArgs > 1) {
-		for (int i = 1; i < lenArgs; ++i) {
-			std::ostringstream oss;
-			oss << i;
-			test(args[i], oss.str().c_str());
-		}
-		return EXIT_SUCCESS;
+	if (lenArgs < 2) {
+		std::cerr << "No files provided." << std::endl;
+		return EXIT_FAILURE;
 	}
-	std::cerr << "No files provided." << std::endl;
-	return EXIT_FAILURE;
+	for (int i = 1; i < lenArgs; ++i) {
+		std::ostringstream oss;
+		oss << i;
+		test(args[i], oss.str().c_str());
+	}
+	return EXIT_SUCCESS;
 }

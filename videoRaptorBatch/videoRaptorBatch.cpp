@@ -17,14 +17,13 @@ bool videoWorkerForInfo(Video* video, void* context) {
 }
 
 bool videoWorkerForThumbnail(Video* video, void* context) {
-	auto videoThumbnail = (VideoThumbnail*)context;
-	return video->generateThumbnail(videoThumbnail->thumbnailFolder, videoThumbnail->thumbnailName);
+	return video->generateThumbnail((VideoThumbnail*)context);
 }
 
-bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoLog* videoLog, void* videoContext, VideoWorkerFunction videoWorkerFunction) {
+bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* videoReport, void* videoContext, VideoWorkerFunction videoWorkerFunction) {
 	for (size_t i = 0; i < devices.available.size(); ++i) {
 		size_t indexToUse = (devices.indexUsed + i) % devices.available.size();
-		Video videoInfo(videoFilename, videoLog, devices, indexToUse);
+		Video videoInfo(videoFilename, videoReport, devices, indexToUse);
 		if (!videoInfo) {
 			if (videoInfo.hasDeviceError()) {
 				// Device error when loading video: move to next loop step.
@@ -47,10 +46,10 @@ bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoLog* videoL
 		return true;
 	};
 	// Device error for all devices. Don't use devices.
-	VideoLog_error(videoLog, WARNING_NO_DEVICE_CODEC);
+	VideoReport_error(videoReport, WARNING_NO_DEVICE_CODEC);
 	// Set index to invalid value.
 	devices.indexUsed = devices.available.size();
-	Video videoInfo(videoFilename, videoLog, devices, devices.indexUsed);
+	Video videoInfo(videoFilename, videoReport, devices, devices.indexUsed);
 	if (!videoInfo)
 		return false;
 	return videoWorkerFunction(&videoInfo, videoContext);
@@ -67,7 +66,7 @@ int videoRaptorThumbnails(int length, VideoThumbnail** pVideoThumbnail) {
 			&& videoThumbnail->filename
 			&& videoThumbnail->thumbnailFolder
 			&& videoThumbnail->thumbnailName
-			&& workOnVideo(*devices, videoThumbnail->filename, &videoThumbnail->errors, videoThumbnail, videoWorkerForThumbnail))
+			&& workOnVideo(*devices, videoThumbnail->filename, &videoThumbnail->report, videoThumbnail, videoWorkerForThumbnail))
 			++countLoaded;
 	}
 	return countLoaded;
@@ -82,7 +81,7 @@ int videoRaptorDetails(int length, VideoInfo** pVideoInfo) {
 		VideoInfo* videoDetails = pVideoInfo[i];
 		if (videoDetails
 			&& videoDetails->filename
-			&& workOnVideo(*devices, videoDetails->filename, &videoDetails->errors, videoDetails, videoWorkerForInfo))
+			&& workOnVideo(*devices, videoDetails->filename, &videoDetails->report, videoDetails, videoWorkerForInfo))
 			++countLoaded;
 	}
 	return countLoaded;

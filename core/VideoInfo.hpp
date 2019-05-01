@@ -6,7 +6,7 @@
 #define VIDEORAPTOR_VIDEO_DETAILS_HPP
 
 #include <cstdint>
-#include "VideoLog.hpp"
+#include "VideoReport.hpp"
 
 struct VideoInfo {
 	// Inputs:
@@ -25,9 +25,8 @@ struct VideoInfo {
 	int64_t duration_time_base;
 	int64_t size;
 	int64_t bit_rate;
-	// Boolean to indicate if this VideoInfo object was set with real video information.
-	bool done;
-	VideoLog errors;
+	VideoReport report;
+	// Use VideoReport_isDone(&videoInfo.report) to check if info was correctly collected.
 };
 
 extern "C" {

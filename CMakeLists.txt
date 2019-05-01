@@ -18,7 +18,7 @@ set(COMMON_SOURCES
         core/utils.hpp
         core/Video.hpp
         core/VideoInfo.hpp
-        core/VideoLog.hpp
+        core/VideoReport.hpp
         core/VideoRaptorInfo.hpp
         core/VideoThumbnail.hpp
         lib/lodepng/lodepng.cpp

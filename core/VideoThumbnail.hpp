@@ -5,7 +5,7 @@
 #ifndef VIDEORAPTOR_VIDEOTHUMBNAIL_HPP
 #define VIDEORAPTOR_VIDEOTHUMBNAIL_HPP
 
-#include "VideoLog.hpp"
+#include "VideoReport.hpp"
 
 struct VideoThumbnail {
 	// Inputs:
@@ -13,7 +13,8 @@ struct VideoThumbnail {
 	const char* thumbnailFolder;
 	const char* thumbnailName;
 	// Outputs:
-	VideoLog errors;
+	VideoReport report;
+	// Use VideoReport_isDone(&videoThumbnail.report) to check if thumbnail was correctly generated.
 };
 
 extern "C" {

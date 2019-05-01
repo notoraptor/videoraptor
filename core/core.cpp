@@ -4,7 +4,6 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 };
-#include "errorCodes.hpp"
 #include "utils.hpp"
 #include "VideoInfo.hpp"
 #include "VideoThumbnail.hpp"
@@ -30,10 +29,9 @@ void VideoRaptorInfo_init(VideoRaptorInfo* videoRaptorInfo) {
 	HWDevices* devices = getHardwareDevices();
 	videoRaptorInfo->hardwareDevicesCount = devices->countDeviceTypes();
 	videoRaptorInfo->hardwareDevicesNames = nullptr;
-	const char* separator = ", ";
-	size_t outputLength = devices->getStringRepresentationLength(separator);
-	if (outputLength) {
-		videoRaptorInfo->hardwareDevicesNames = new char[outputLength];
+	if (videoRaptorInfo->hardwareDevicesCount) {
+		const char* separator = ", ";
+		videoRaptorInfo->hardwareDevicesNames = new char[devices->getStringRepresentationLength(separator)];
 		devices->getStringRepresentation(videoRaptorInfo->hardwareDevicesNames, separator);
 	}
 }
@@ -46,7 +44,7 @@ void VideoThumbnail_init(VideoThumbnail* videoThumbnail, const char* filename, c
 	videoThumbnail->filename = filename;
 	videoThumbnail->thumbnailFolder = thumbnailFolder;
 	videoThumbnail->thumbnailName = thumbnailName;
-	VideoLog_init(&videoThumbnail->errors);
+	VideoReport_init(&videoThumbnail->report);
 }
 
 void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
@@ -64,8 +62,7 @@ void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
 	videoInfo->duration_time_base = 0;
 	videoInfo->size = 0;
 	videoInfo->bit_rate = 0;
-	videoInfo->done = false;
-	VideoLog_init(&videoInfo->errors);
+	VideoReport_init(&videoInfo->report);
 }
 
 void VideoInfo_clear(VideoInfo* videoInfo) {
@@ -78,5 +75,5 @@ void VideoInfo_clear(VideoInfo* videoInfo) {
 }
 
 bool VideoInfo_error(VideoInfo* videoInfo, unsigned int errorCode, const char* errorDetail) {
-	return VideoLog_error(&videoInfo->errors, errorCode, errorDetail);
+	return VideoReport_error(&videoInfo->report, errorCode, errorDetail);
 }
