@@ -29,10 +29,9 @@ class Video {
 	FileHandle fileHandle;
 	AVFormatContext* format;
 	AVIOContext* avioContext;
-	Stream audioStream;
-	Stream videoStream;
+	AudioStream audioStream;
+	VideoStream videoStream;
 	VideoReport* report;
-	bool loaded;
 
 	bool loadInputFile() {
 #ifdef WIN32
@@ -54,10 +53,10 @@ class Video {
 		if (avformat_find_stream_info(format, NULL) < 0)
 			return VideoReport_error(report, ERROR_NO_STREAM_INFO);
 		// Load best audio and video streams.
-		if (!videoStream.load(format, AVMEDIA_TYPE_VIDEO, devices, deviceIndex))
+		if (!videoStream.load(format, devices, deviceIndex))
 			return false;
 		// Audio stream loading is optional.
-		audioStream.load(format, AVMEDIA_TYPE_AUDIO, devices, deviceIndex);
+		audioStream.load(format);
 		return true;
 	}
 
@@ -82,7 +81,7 @@ class Video {
 		// Write pixel data
 		for (int y = 0; y < pFrame->height; ++y)
 			memcpy(image.data() + (4 * pFrame->width * y), pFrame->data[0] + y * pFrame->linesize[0],
-				   (size_t) (pFrame->width * 4));
+					(size_t)pFrame->width * 4);
 
 		unsigned ret = lodepng::encode(
 				generateThumbnailPath(thFolder, thName), image, (unsigned int) pFrame->width,
@@ -97,8 +96,8 @@ public:
 
 	explicit Video(const char* filename, VideoReport* videoReport, HWDevices& devices, size_t deviceIndex) :
 			fileHandle(filename), format(nullptr), avioContext(nullptr),
-			audioStream(videoReport), videoStream(videoReport), report(videoReport), loaded(false) {
-		loaded = load(devices, deviceIndex);
+			audioStream(), videoStream(videoReport), report(videoReport) {
+		load(devices, deviceIndex);
 	}
 
 	~Video() {
@@ -111,10 +110,6 @@ public:
 		if (format) {
 			avformat_close_input(&format);
 		}
-	}
-
-	explicit operator bool() const {
-		return loaded;
 	}
 
 	bool generateThumbnail(VideoThumbnail* videoThumbnail) {
@@ -161,7 +156,7 @@ public:
 				if (ret == AVERROR_EOF || ret < 0)
 					return VideoReport_error(report, ERROR_DECODE_VIDEO);
 
-				// Set frame to save (either from decoed frame or from GPU).
+				// Set frame to save (either from decoded frame or from GPU).
 				if (videoStream.selectedConfig && thCtx.frame->format == videoStream.selectedConfig->pix_fmt) {
 					// Allocate HW video frame
 					thCtx.swFrame = av_frame_alloc();
@@ -208,10 +203,6 @@ public:
 		}
 
 		return VideoReport_error(report, ERROR_SAVE_THUMBNAIL);
-	}
-
-	bool hasDeviceError() {
-		return videoStream.deviceError;
 	}
 
 	void extractInfo(VideoInfo* videoDetails) {

@@ -48,6 +48,7 @@ bool testDetails(const char* filename) {
 	VideoInfo_clear(&videoDetails);
 	return true;
 }
+
 bool testThumbnail(const char* filename, const char* thumbName) {
 	VideoThumbnail videoThumbnail;
 	VideoThumbnail_init(&videoThumbnail, filename, ".", thumbName);
@@ -71,6 +72,17 @@ void test(const char* filename, const char* thumbName) {
 		testThumbnail(filename, thumbName);
 }
 
+void testErrorPrinting() {
+	std::cout << "Testing errors printing ..." << std::endl;
+	unsigned int errors = ERROR_OPEN_FILE | ERROR_CODE_000000032 | ERROR_CONVERT_CODEC_PARAMS | ERROR_PNG_CODEC;
+	ErrorReader errorReader;
+	ErrorReader_init(&errorReader, errors);
+	while (const char* errorString = ErrorReader_next(&errorReader)) {
+		std::cout << errorString << std::endl;
+	}
+	std::cout << "... Finished testing." << std::endl << std::endl;
+}
+
 void printVideoRaptorInfo() {
 	// Print info about available hardware acceleration.
 	VideoRaptorInfo videoRaptorInfo;
@@ -83,6 +95,9 @@ void printVideoRaptorInfo() {
 }
 
 int main(int lenArgs, char* args[]) {
+	// Test error printing.
+	testErrorPrinting();
+
 	// Print some info.
 	printVideoRaptorInfo();
 

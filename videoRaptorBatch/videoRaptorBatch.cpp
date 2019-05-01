@@ -23,9 +23,9 @@ bool videoWorkerForThumbnail(Video* video, void* context) {
 bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* videoReport, void* videoContext, VideoWorkerFunction videoWorkerFunction) {
 	for (size_t i = 0; i < devices.available.size(); ++i) {
 		size_t indexToUse = (devices.indexUsed + i) % devices.available.size();
-		Video videoInfo(videoFilename, videoReport, devices, indexToUse);
-		if (!videoInfo) {
-			if (videoInfo.hasDeviceError()) {
+		Video video(videoFilename, videoReport, devices, indexToUse);
+		if (VideoReport_hasError(videoReport)) {
+			if (VideoReport_hasDeviceError(videoReport)) {
 				// Device error when loading video: move to next loop step.
 				continue;
 			}
@@ -33,8 +33,8 @@ bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* vid
 			return false;
 		}
 		// Video loaded. Do work.
-		if (!videoWorkerFunction(&videoInfo, videoContext)) {
-			if (videoInfo.hasDeviceError()) {
+		if (!videoWorkerFunction(&video, videoContext)) {
+			if (VideoReport_hasDeviceError(videoReport)) {
 				// Device error when working: move to next loop step.
 				continue;
 			}
@@ -49,10 +49,10 @@ bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* vid
 	VideoReport_error(videoReport, WARNING_NO_DEVICE_CODEC);
 	// Set index to invalid value.
 	devices.indexUsed = devices.available.size();
-	Video videoInfo(videoFilename, videoReport, devices, devices.indexUsed);
-	if (!videoInfo)
+	Video video(videoFilename, videoReport, devices, devices.indexUsed);
+	if (VideoReport_hasError(videoReport))
 		return false;
-	return videoWorkerFunction(&videoInfo, videoContext);
+	return videoWorkerFunction(&video, videoContext);
 }
 
 int videoRaptorThumbnails(int length, VideoThumbnail** pVideoThumbnail) {

@@ -9,19 +9,65 @@ extern "C" {
 #include "VideoThumbnail.hpp"
 #include "VideoRaptorInfo.hpp"
 
-// Doing nothing (silent log).
-void customCallback(void* avClass, int level, const char* fmt, va_list vl) {}
+const char* errorCodeStrings[] = {
+		"SUCCESS_NOTHING",
+		"ERROR_PNG_CODEC",
+		"ERROR_NO_BATCH_GIVEN",
+		"ERROR_NO_STREAM_INFO",
+		"WARNING_OPEN_ASCII_FILENAME",
+		"ERROR_OPEN_FILE",
+		"ERROR_FIND_VIDEO_STREAM",
+		"ERROR_ALLOC_CODEC_CONTEXT",
+		"ERROR_CONVERT_CODEC_PARAMS",
+		"ERROR_OPEN_CODEC",
+		"ERROR_INVALID_PIX_FMT",
+		"ERROR_INVALID_WIDTH",
+		"ERROR_INVALID_HEIGHT",
+		"WARNING_FIND_HW_DEVICE_CONFIG",
+		"WARNING_CREATE_HW_DEVICE_CONFIG",
+		"WARNING_HW_SURFACE_FORMAT",
+		"ERROR_SEEK_VIDEO",
+		"ERROR_SEND_PACKET",
+		"ERROR_ALLOC_INPUT_FRAME",
+		"ERROR_DECODE_VIDEO",
+		"ERROR_ALLOC_HW_INPUT_FRAME",
+		"ERROR_HW_DATA_TRANSFER",
+		"ERROR_ALLOC_OUTPUT_FRAME",
+		"ERROR_ALLOC_OUTPUT_FRAME_BUFFER",
+		"ERROR_SAVE_THUMBNAIL",
+		"ERROR_PNG_ENCODER",
+		"WARNING_NO_DEVICE_CODEC",
+		"ERROR_CUSTOM_FORMAT_CONTEXT",
+		"ERROR_CUSTOM_FORMAT_CONTEXT_OPEN",
+		"SUCCESS_DONE",
+		"ERROR_CODE_000000030",
+		"ERROR_CODE_000000031",
+		"ERROR_CODE_000000032",
+};
+
+const char* errorIndexToString(unsigned int errorIndex) {
+	if (errorIndex >= sizeof(errorCodeStrings) / sizeof(const char*))
+		return nullptr;
+	return errorCodeStrings[errorIndex];
+}
+
+void ErrorReader_init(ErrorReader* errorReader, unsigned int errors) {
+	errorReader->errors = errors;
+	errorReader->position = 0;
+}
+const char* ErrorReader_next(ErrorReader * errorReader) {
+	while (errorReader->errors) {
+		bool hasRest = errorReader->errors % 2;
+		errorReader->errors /= 2;
+		++errorReader->position;
+		if (hasRest)
+			return errorIndexToString(errorReader->position);
+	}
+	return nullptr;
+}
 
 HWDevices* getHardwareDevices() {
 	static HWDevices devices;
-	static bool initialized = false;
-	if (!initialized) {
-		// Initializations.
-		// Set custom callback
-		// TODO (is it still useful?).
-		av_log_set_callback(customCallback);
-		initialized = true;
-	}
 	return &devices;
 }
 
@@ -72,8 +118,4 @@ void VideoInfo_clear(VideoInfo* videoInfo) {
 	delete[] videoInfo->container_format;
 	delete[] videoInfo->audio_codec;
 	delete[] videoInfo->video_codec;
-}
-
-bool VideoInfo_error(VideoInfo* videoInfo, unsigned int errorCode, const char* errorDetail) {
-	return VideoReport_error(&videoInfo->report, errorCode, errorDetail);
 }

@@ -32,7 +32,6 @@ struct VideoInfo {
 extern "C" {
 	void VideoInfo_init(VideoInfo* videoInfo, const char* filename);
 	void VideoInfo_clear(VideoInfo* videoInfo);
-	bool VideoInfo_error(VideoInfo* videoInfo, unsigned int errorCode, const char* errorDetail = nullptr);
 }
 
 #endif //VIDEORAPTOR_VIDEO_DETAILS_HPP

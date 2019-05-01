@@ -44,8 +44,15 @@ inline bool VideoReport_hasError(VideoReport* videoReport) {
 	return videoReport->errors && !(videoReport->errors & SUCCESS_DONE);
 }
 
+inline bool VideoReport_hasDeviceError(VideoReport* videoReport) {
+	return (videoReport->errors & (WARNING_FIND_HW_DEVICE_CONFIG | WARNING_CREATE_HW_DEVICE_CONFIG | WARNING_HW_SURFACE_FORMAT));
+}
+
 inline void VideoReport_print(VideoReport* report) {
-	printError(report->errors);
+	ErrorReader errorReader;
+	ErrorReader_init(&errorReader, report->errors);
+	while (const char* errorString = ErrorReader_next(&errorReader))
+		std::cout << errorString << std::endl;
 	if (report->errorDetail[0] != '\0')
 		std::cout << "ERROR_DETAIL: " << report->errorDetail << std::endl;
 }
