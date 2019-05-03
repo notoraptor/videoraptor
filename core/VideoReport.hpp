@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include "errorCodes.hpp"
+#include "ErrorReader.hpp"
 
 #define ERROR_DETAIL_MAX_LENGTH 64
 
@@ -36,18 +37,6 @@ inline bool VideoReport_setDone(VideoReport* report, bool done) {
 	return done;
 }
 
-inline bool VideoReport_isDone(VideoReport* report) {
-	return report->errors & SUCCESS_DONE;
-}
-
-inline bool VideoReport_hasError(VideoReport* videoReport) {
-	return videoReport->errors && !(videoReport->errors & SUCCESS_DONE);
-}
-
-inline bool VideoReport_hasDeviceError(VideoReport* videoReport) {
-	return (videoReport->errors & (WARNING_FIND_HW_DEVICE_CONFIG | WARNING_CREATE_HW_DEVICE_CONFIG | WARNING_HW_SURFACE_FORMAT));
-}
-
 inline void VideoReport_print(VideoReport* report) {
 	ErrorReader errorReader;
 	ErrorReader_init(&errorReader, report->errors);
@@ -57,7 +46,10 @@ inline void VideoReport_print(VideoReport* report) {
 		std::cout << "ERROR_DETAIL: " << report->errorDetail << std::endl;
 }
 
-#include <cstdint>
-#include <iostream>
+extern "C" {
+	bool VideoReport_isDone(VideoReport* report);
+	bool VideoReport_hasError(VideoReport* videoReport);
+	bool VideoReport_hasDeviceError(VideoReport* videoReport);
+}
 
 #endif //VIDEORAPTOR_VIDEOREPORT_HPP

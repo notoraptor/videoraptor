@@ -26,7 +26,7 @@ set(COMMON_SOURCES
         lib/utf/utf.hpp
         videoRaptorBatch/videoRaptorBatch.cpp
         videoRaptorBatch/videoRaptorBatch.hpp
-        )
+        core/ErrorReader.hpp)
 set(TEST_SOURCES
         test.cpp)
 add_library(videoRaptorBatch MODULE ${COMMON_SOURCES})

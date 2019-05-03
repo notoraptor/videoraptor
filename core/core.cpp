@@ -8,6 +8,7 @@ extern "C" {
 #include "VideoInfo.hpp"
 #include "VideoThumbnail.hpp"
 #include "VideoRaptorInfo.hpp"
+#include "ErrorReader.hpp"
 
 const char* errorCodeStrings[] = {
 		"SUCCESS_NOTHING",
@@ -55,6 +56,7 @@ void ErrorReader_init(ErrorReader* errorReader, unsigned int errors) {
 	errorReader->errors = errors;
 	errorReader->position = 0;
 }
+
 const char* ErrorReader_next(ErrorReader * errorReader) {
 	while (errorReader->errors) {
 		bool hasRest = errorReader->errors % 2;
@@ -84,6 +86,18 @@ void VideoRaptorInfo_init(VideoRaptorInfo* videoRaptorInfo) {
 
 void VideoRaptorInfo_clear(VideoRaptorInfo* videoRaptorInfo) {
 	delete[] videoRaptorInfo->hardwareDevicesNames;
+}
+
+bool VideoReport_isDone(VideoReport* report) {
+	return report->errors & SUCCESS_DONE;
+}
+
+bool VideoReport_hasError(VideoReport* videoReport) {
+	return videoReport->errors && !(videoReport->errors & SUCCESS_DONE);
+}
+
+bool VideoReport_hasDeviceError(VideoReport* videoReport) {
+	return (videoReport->errors & (WARNING_FIND_HW_DEVICE_CONFIG | WARNING_CREATE_HW_DEVICE_CONFIG | WARNING_HW_SURFACE_FORMAT));
 }
 
 void VideoThumbnail_init(VideoThumbnail* videoThumbnail, const char* filename, const char* thumbnailFolder, const char* thumbnailName) {

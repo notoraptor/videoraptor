@@ -5,6 +5,7 @@
 #include <sstream>
 #include <core/VideoRaptorInfo.hpp>
 #include <videoRaptorBatch/videoRaptorBatch.hpp>
+#include <core/ErrorReader.hpp>
 
 void printDetails(VideoInfo* videoDetails) {
 	std::cout << "BEGIN DETAILS" << std::endl;
@@ -31,21 +32,21 @@ void printDetails(VideoInfo* videoDetails) {
 }
 
 bool testDetails(const char* filename) {
-	VideoInfo videoDetails;
-	VideoInfo_init(&videoDetails, filename);
-	VideoInfo* pVideoDetails = &videoDetails;
+	VideoInfo videoInfo;
+	VideoInfo_init(&videoInfo, filename);
+	VideoInfo* pVideoDetails = &videoInfo;
 	videoRaptorDetails(1, &pVideoDetails);
-	if (VideoReport_hasError(&videoDetails.report)) {
-		std::cout << "Video details: error(s) occurred (" << videoDetails.report.errors << ")." << std::endl;
-		VideoReport_print(&videoDetails.report);
+	if (VideoReport_hasError(&videoInfo.report)) {
+		std::cout << "Video details: error(s) occurred (" << videoInfo.report.errors << ")." << std::endl;
+		VideoReport_print(&videoInfo.report);
 		return false;
 	}
-	if (!VideoReport_isDone(&videoDetails.report)) {
+	if (!VideoReport_isDone(&videoInfo.report)) {
 		std::cout << "No details." << std::endl;
 		return false;
 	}
-	printDetails(&videoDetails);
-	VideoInfo_clear(&videoDetails);
+	printDetails(&videoInfo);
+	VideoInfo_clear(&videoInfo);
 	return true;
 }
 

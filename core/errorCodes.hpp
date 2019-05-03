@@ -43,14 +43,4 @@ enum VideoRaptorErrors {
 	ERROR_CODE_000000032				= 0b10000000000000000000000000000000,
 };
 
-struct ErrorReader {
-	unsigned int errors;
-	unsigned int position;
-};
-
-extern "C" {
-	void ErrorReader_init(ErrorReader* errorReader, unsigned int errors);
-	const char* ErrorReader_next(ErrorReader* errorReader);
-}
-
 #endif //VIDEORAPTOR_ERRORCODES_HPP
