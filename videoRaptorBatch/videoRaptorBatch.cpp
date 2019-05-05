@@ -46,7 +46,7 @@ bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* vid
 		return true;
 	};
 	// Device error for all devices. Don't use devices.
-	VideoReport_error(videoReport, WARNING_NO_DEVICE_CODEC);
+	VideoReport_error(videoReport, ERROR_NO_DEVICE_CODEC);
 	// Set index to invalid value.
 	devices.indexUsed = devices.available.size();
 	Video video(videoFilename, videoReport, devices, devices.indexUsed);

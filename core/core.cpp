@@ -15,7 +15,7 @@ const char* errorCodeStrings[] = {
 		"ERROR_PNG_CODEC",
 		"ERROR_NO_BATCH_GIVEN",
 		"ERROR_NO_STREAM_INFO",
-		"WARNING_OPEN_ASCII_FILENAME",
+		"ERROR_OPEN_ASCII_FILENAME",
 		"ERROR_OPEN_FILE",
 		"ERROR_FIND_VIDEO_STREAM",
 		"ERROR_ALLOC_CODEC_CONTEXT",
@@ -24,9 +24,9 @@ const char* errorCodeStrings[] = {
 		"ERROR_INVALID_PIX_FMT",
 		"ERROR_INVALID_WIDTH",
 		"ERROR_INVALID_HEIGHT",
-		"WARNING_FIND_HW_DEVICE_CONFIG",
-		"WARNING_CREATE_HW_DEVICE_CONFIG",
-		"WARNING_HW_SURFACE_FORMAT",
+		"ERROR_FIND_HW_DEVICE_CONFIG",
+		"ERROR_CREATE_HW_DEVICE_CONFIG",
+		"ERROR_HW_SURFACE_FORMAT",
 		"ERROR_SEEK_VIDEO",
 		"ERROR_SEND_PACKET",
 		"ERROR_ALLOC_INPUT_FRAME",
@@ -37,7 +37,7 @@ const char* errorCodeStrings[] = {
 		"ERROR_ALLOC_OUTPUT_FRAME_BUFFER",
 		"ERROR_SAVE_THUMBNAIL",
 		"ERROR_PNG_ENCODER",
-		"WARNING_NO_DEVICE_CODEC",
+		"ERROR_NO_DEVICE_CODEC",
 		"ERROR_CUSTOM_FORMAT_CONTEXT",
 		"ERROR_CUSTOM_FORMAT_CONTEXT_OPEN",
 		"SUCCESS_DONE",
@@ -97,7 +97,7 @@ bool VideoReport_hasError(VideoReport* videoReport) {
 }
 
 bool VideoReport_hasDeviceError(VideoReport* videoReport) {
-	return (videoReport->errors & (WARNING_FIND_HW_DEVICE_CONFIG | WARNING_CREATE_HW_DEVICE_CONFIG | WARNING_HW_SURFACE_FORMAT));
+	return (videoReport->errors & (ERROR_FIND_HW_DEVICE_CONFIG | ERROR_CREATE_HW_DEVICE_CONFIG | ERROR_HW_SURFACE_FORMAT));
 }
 
 void VideoThumbnail_init(VideoThumbnail* videoThumbnail, const char* filename, const char* thumbnailFolder, const char* thumbnailName) {

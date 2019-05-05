@@ -109,10 +109,11 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 	AVProbeData probeData;
 	AVInputFormat* inputFormat = nullptr;
 	ProbeBuffer probeBuffer;
+	unsigned int asciiError = 0;
 
 	fileHandle.file = fopen(fileHandle.filename, "rb");
 	if (!fileHandle.file) {
-		VideoReport_error(videoErrors, WARNING_OPEN_ASCII_FILENAME);
+		asciiError = ERROR_OPEN_ASCII_FILENAME;
 		// To handle long file names, we assume file name is an absolute path, and we add prefix \\?\.
 		// See (2018/07/29): https://docs.microsoft.com/fr-fr/windows/desktop/FileIO/naming-a-file#maximum-path-length-limitation
 		fileHandle.unicodeFilename.push_back('\\');
@@ -124,7 +125,7 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 		fileHandle.file = _wfopen(fileHandle.unicodeFilename.data(), L"rb");
 	}
 	if (!fileHandle.file)
-		return VideoReport_error(videoErrors, ERROR_OPEN_FILE);
+		return VideoReport_error(videoErrors, ERROR_OPEN_FILE | asciiError);
 
 	// Get input format.
 	probeBuffer.probe_buffer = (uint8_t*) av_malloc(probe_buffer_size);

@@ -58,7 +58,7 @@ private:
 		for (int i = 0;; ++i) {
 			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
 			if (!config) {
-				return VideoReport_error(report, WARNING_FIND_HW_DEVICE_CONFIG);
+				return VideoReport_error(report, ERROR_FIND_HW_DEVICE_CONFIG);
 			}
 			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == deviceType) {
 				selectedConfig = config;
@@ -74,7 +74,7 @@ private:
 		}
 		AVBufferRef* hwDeviceCtx = nullptr;
 		if (av_hwdevice_ctx_create(&hwDeviceCtx, selectedConfig->device_type, NULL, NULL, 0) < 0) {
-			return VideoReport_error(report, WARNING_CREATE_HW_DEVICE_CONFIG);
+			return VideoReport_error(report, ERROR_CREATE_HW_DEVICE_CONFIG);
 		}
 		devices.loaded[selectedConfig->device_type] = hwDeviceCtx;
 		codecContext->hw_device_ctx = av_buffer_ref(hwDeviceCtx);
@@ -92,7 +92,7 @@ private:
 					return streamInfo->selectedConfig->pix_fmt;
 			}
 		}
-		VideoReport_error(streamInfo->report, WARNING_HW_SURFACE_FORMAT);
+		VideoReport_error(streamInfo->report, ERROR_HW_SURFACE_FORMAT);
 		return AV_PIX_FMT_NONE;
 	}
 

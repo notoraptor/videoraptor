@@ -32,40 +32,42 @@ void printDetails(VideoInfo* videoDetails) {
 }
 
 bool testDetails(const char* filename) {
+	bool returnValue = false;
 	VideoInfo videoInfo;
 	VideoInfo_init(&videoInfo, filename);
 	VideoInfo* pVideoDetails = &videoInfo;
 	videoRaptorDetails(1, &pVideoDetails);
+	if (VideoReport_isDone(&videoInfo.report)) {
+		printDetails(&videoInfo);
+		returnValue = true;
+	} else {
+		std::cout << "No details." << std::endl;
+	}
 	if (VideoReport_hasError(&videoInfo.report)) {
 		std::cout << "Video details: error(s) occurred (" << videoInfo.report.errors << ")." << std::endl;
 		VideoReport_print(&videoInfo.report);
-		return false;
 	}
-	if (!VideoReport_isDone(&videoInfo.report)) {
-		std::cout << "No details." << std::endl;
-		return false;
-	}
-	printDetails(&videoInfo);
 	VideoInfo_clear(&videoInfo);
-	return true;
+	return returnValue;
 }
 
 bool testThumbnail(const char* filename, const char* thumbName) {
+	bool returnValue = false;
 	VideoThumbnail videoThumbnail;
 	VideoThumbnail_init(&videoThumbnail, filename, ".", thumbName);
 	VideoThumbnail* pVideoThumbnailInfo = &videoThumbnail;
 	videoRaptorThumbnails(1, &pVideoThumbnailInfo);
+	if (VideoReport_isDone(&videoThumbnail.report)) {
+		std::cout << "Thumbnail created: " << thumbName << ".png" << std::endl;
+		returnValue = true;
+	} else {
+		std::cout << "No thumbnail." << std::endl;
+	}
 	if (VideoReport_hasError(&videoThumbnail.report)) {
 		std::cout << "Video thumbnails: error(s) occurred (" << videoThumbnail.report.errors << ")." << std::endl;
 		VideoReport_print(&videoThumbnail.report);
-		return false;
 	}
-	if (!VideoReport_isDone(&videoThumbnail.report)) {
-		std::cout << "No thumbnail." << std::endl;
-		return false;
-	}
-	std::cout << "Thumbnail created: " << thumbName << ".png" << std::endl;
-	return true;
+	return returnValue;
 }
 
 void test(const char* filename, const char* thumbName) {
