@@ -68,8 +68,16 @@ const char* ErrorReader_next(ErrorReader * errorReader) {
 	return nullptr;
 }
 
+// Doing nothing (silent log).
+void customCallback(void* avClass, int level, const char* fmt, va_list vl) {}
+
 HWDevices* getHardwareDevices() {
 	static HWDevices devices;
+	static bool initialized = false;
+	if (!initialized) {
+		av_log_set_callback(customCallback);
+		initialized = true;
+	}
 	return &devices;
 }
 

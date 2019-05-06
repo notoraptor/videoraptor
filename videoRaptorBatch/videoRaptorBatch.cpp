@@ -23,6 +23,7 @@ bool videoWorkerForThumbnail(Video* video, void* context) {
 bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* videoReport, void* videoContext, VideoWorkerFunction videoWorkerFunction) {
 	for (size_t i = 0; i < devices.available.size(); ++i) {
 		size_t indexToUse = (devices.indexUsed + i) % devices.available.size();
+		VideoReport_init(videoReport);
 		Video video(videoFilename, videoReport, devices, indexToUse);
 		if (VideoReport_hasError(videoReport)) {
 			if (VideoReport_hasDeviceError(videoReport)) {
@@ -45,10 +46,9 @@ bool workOnVideo(HWDevices &devices, const char* videoFilename, VideoReport* vid
 		devices.indexUsed = indexToUse;
 		return true;
 	};
-	// Device error for all devices. Don't use devices.
-	VideoReport_error(videoReport, ERROR_NO_DEVICE_CODEC);
-	// Set index to invalid value.
+	// Device error for all devices. Don't use devices. Set index to invalid value.
 	devices.indexUsed = devices.available.size();
+	VideoReport_init(videoReport);
 	Video video(videoFilename, videoReport, devices, devices.indexUsed);
 	if (VideoReport_hasError(videoReport))
 		return false;
