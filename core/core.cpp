@@ -4,39 +4,140 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 };
-#include "AppError.hpp"
-#include "Output.hpp"
-#include "initVideoRaptor.hpp"
+#include "utils.hpp"
+#include "VideoInfo.hpp"
+#include "VideoThumbnail.hpp"
+#include "VideoRaptorInfo.hpp"
+#include "ErrorReader.hpp"
 
-const AVCodec* imageCodec = nullptr;
-const std::string emptyString;
+const char* errorCodeStrings[] = {
+		"SUCCESS_NOTHING",
+		"ERROR_PNG_CODEC",
+		"ERROR_NO_BATCH_GIVEN",
+		"ERROR_NO_STREAM_INFO",
+		"ERROR_OPEN_ASCII_FILENAME",
+		"ERROR_OPEN_FILE",
+		"ERROR_FIND_VIDEO_STREAM",
+		"ERROR_ALLOC_CODEC_CONTEXT",
+		"ERROR_CONVERT_CODEC_PARAMS",
+		"ERROR_OPEN_CODEC",
+		"ERROR_INVALID_PIX_FMT",
+		"ERROR_INVALID_WIDTH",
+		"ERROR_INVALID_HEIGHT",
+		"ERROR_FIND_HW_DEVICE_CONFIG",
+		"ERROR_CREATE_HW_DEVICE_CONFIG",
+		"ERROR_HW_SURFACE_FORMAT",
+		"ERROR_SEEK_VIDEO",
+		"ERROR_SEND_PACKET",
+		"ERROR_ALLOC_INPUT_FRAME",
+		"ERROR_DECODE_VIDEO",
+		"ERROR_ALLOC_HW_INPUT_FRAME",
+		"ERROR_HW_DATA_TRANSFER",
+		"ERROR_ALLOC_OUTPUT_FRAME",
+		"ERROR_ALLOC_OUTPUT_FRAME_BUFFER",
+		"ERROR_SAVE_THUMBNAIL",
+		"ERROR_PNG_ENCODER",
+		"ERROR_NO_DEVICE_CODEC",
+		"ERROR_CUSTOM_FORMAT_CONTEXT",
+		"ERROR_CUSTOM_FORMAT_CONTEXT_OPEN",
+		"SUCCESS_DONE",
+		"ERROR_CODE_000000030",
+		"ERROR_CODE_000000031",
+		"ERROR_CODE_000000032",
+};
 
-char* Output::flush() {
-	delete[] str;
-	std::string s = oss.str();
-	oss.str(emptyString);
-	str = new char[s.length() + 1];
-	memcpy(str, s.data(), s.length());
-	str[s.length()] = '\0';
-	return str;
+const char* errorIndexToString(unsigned int errorIndex) {
+	if (errorIndex >= sizeof(errorCodeStrings) / sizeof(const char*))
+		return nullptr;
+	return errorCodeStrings[errorIndex];
+}
+
+void ErrorReader_init(ErrorReader* errorReader, unsigned int errors) {
+	errorReader->errors = errors;
+	errorReader->position = 0;
+}
+
+const char* ErrorReader_next(ErrorReader * errorReader) {
+	while (errorReader->errors) {
+		bool hasRest = errorReader->errors % 2;
+		errorReader->errors /= 2;
+		++errorReader->position;
+		if (hasRest)
+			return errorIndexToString(errorReader->position);
+	}
+	return nullptr;
 }
 
 // Doing nothing (silent log).
 void customCallback(void* avClass, int level, const char* fmt, va_list vl) {}
 
-HWDevices* initVideoRaptor(std::basic_ostream<char>& out) {
-	static HWDevices devices(out);
+HWDevices* getHardwareDevices() {
+	static HWDevices devices;
 	static bool initialized = false;
 	if (!initialized) {
-		// Initializations.
 		av_log_set_callback(customCallback);
-		// Load output image codec (for video thumbnails).
-		imageCodec = avcodec_find_encoder(AV_CODEC_ID_PNG);
-		if (!imageCodec) {
-			AppError(out).write("PNG codec not found.");
-			return nullptr;
-		}
 		initialized = true;
 	}
 	return &devices;
+}
+
+void VideoRaptorInfo_init(VideoRaptorInfo* videoRaptorInfo) {
+	HWDevices* devices = getHardwareDevices();
+	videoRaptorInfo->hardwareDevicesCount = devices->countDeviceTypes();
+	videoRaptorInfo->hardwareDevicesNames = nullptr;
+	if (videoRaptorInfo->hardwareDevicesCount) {
+		const char* separator = ", ";
+		videoRaptorInfo->hardwareDevicesNames = new char[devices->getStringRepresentationLength(separator)];
+		devices->getStringRepresentation(videoRaptorInfo->hardwareDevicesNames, separator);
+	}
+}
+
+void VideoRaptorInfo_clear(VideoRaptorInfo* videoRaptorInfo) {
+	delete[] videoRaptorInfo->hardwareDevicesNames;
+}
+
+bool VideoReport_isDone(VideoReport* report) {
+	return report->errors & SUCCESS_DONE;
+}
+
+bool VideoReport_hasError(VideoReport* videoReport) {
+	return videoReport->errors && !(videoReport->errors & SUCCESS_DONE);
+}
+
+bool VideoReport_hasDeviceError(VideoReport* videoReport) {
+	return (videoReport->errors & (ERROR_FIND_HW_DEVICE_CONFIG | ERROR_CREATE_HW_DEVICE_CONFIG | ERROR_HW_SURFACE_FORMAT));
+}
+
+void VideoThumbnail_init(VideoThumbnail* videoThumbnail, const char* filename, const char* thumbnailFolder, const char* thumbnailName) {
+	videoThumbnail->filename = filename;
+	videoThumbnail->thumbnailFolder = thumbnailFolder;
+	videoThumbnail->thumbnailName = thumbnailName;
+	VideoReport_init(&videoThumbnail->report);
+}
+
+void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
+	videoInfo->filename = filename;
+	videoInfo->title = nullptr;
+	videoInfo->container_format = nullptr;
+	videoInfo->audio_codec = nullptr;
+	videoInfo->video_codec = nullptr;
+	videoInfo->width = 0;
+	videoInfo->height = 0;
+	videoInfo->frame_rate_num = 0;
+	videoInfo->frame_rate_den = 0;
+	videoInfo->sample_rate = 0;
+	videoInfo->duration = 0;
+	videoInfo->duration_time_base = 0;
+	videoInfo->size = 0;
+	videoInfo->bit_rate = 0;
+	VideoReport_init(&videoInfo->report);
+}
+
+void VideoInfo_clear(VideoInfo* videoInfo) {
+	// Field `filename` is not modified.
+	// All potentially allocated fields are cleared.
+	delete[] videoInfo->title;
+	delete[] videoInfo->container_format;
+	delete[] videoInfo->audio_codec;
+	delete[] videoInfo->video_codec;
 }

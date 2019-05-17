@@ -10,33 +10,55 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
-};
-#include "AppError.hpp"
+}
 #include "HWDevices.hpp"
+#include "VideoInfo.hpp"
 
 struct Stream {
 	int index;
 	AVStream* stream;
 	AVCodec* codec;
 	AVCodecContext* codecContext;
+
+	explicit Stream(): index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr) {}
+
+	void clear() {
+		if (codecContext)
+			avcodec_free_context(&codecContext);
+	}
+};
+
+struct AudioStream: public Stream {
+	VideoReport report;
+
+	explicit AudioStream(): Stream(), report() {
+		VideoReport_init(&report);
+	}
+
+	bool load(AVFormatContext* format) {
+		if ((index = av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0)) < 0)
+			return false;
+		stream = format->streams[index];
+		if (!(codecContext = avcodec_alloc_context3(codec)))
+			return VideoReport_error(&report, ERROR_ALLOC_CODEC_CONTEXT);
+		if (avcodec_parameters_to_context(codecContext, stream->codecpar) < 0)
+			return VideoReport_error(&report, ERROR_CONVERT_CODEC_PARAMS);
+		if (avcodec_open2(codecContext, codec, NULL) < 0)
+			return VideoReport_error(&report, ERROR_OPEN_CODEC);
+		return true;
+	}
+};
+
+struct VideoStream: public Stream {
 	const AVCodecHWConfig* selectedConfig;
-	bool deviceError;
-	std::basic_ostream<char>& out;
+	VideoReport* report;
 
-	explicit Stream(std::basic_ostream<char>& output):
-			index(-1), stream(nullptr), codec(nullptr), codecContext(nullptr),
-			selectedConfig(nullptr), deviceError(false), out(output) {}
-
-	bool loadDeviceConfigForCodec(const char* filename, AVHWDeviceType deviceType) {
+private:
+	bool loadHardwareDeviceConfig(AVHWDeviceType deviceType) {
 		for (int i = 0;; ++i) {
 			const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
 			if (!config) {
-				deviceError = true;
-				return AppWarning(out, filename)
-						.write("Unable to find device config for device type ")
-						.write(av_hwdevice_get_type_name(deviceType))
-						.write(" and codec ")
-						.write(codec->name);
+				return VideoReport_error(report, ERROR_FIND_HW_DEVICE_CONFIG);
 			}
 			if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == deviceType) {
 				selectedConfig = config;
@@ -45,90 +67,71 @@ struct Stream {
 		}
 	}
 
-	int initHWDeviceContext(const char* filename, HWDevices& devices) {
+	bool loadHardwareDeviceContext(HWDevices& devices) {
 		if (devices.loaded.find(selectedConfig->device_type) != devices.loaded.end()) {
 			codecContext->hw_device_ctx = av_buffer_ref(devices.loaded[selectedConfig->device_type]);
-//			out << "#MESSAGE Using already loaded device context "
-//		  		<< av_hwdevice_get_type_name(selectedConfig->device_type)
-//				<< " with pixel format " << selectedConfig->pix_fmt
-//				<< " (" << av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name << ")." << std::endl;
 			return true;
 		}
 		AVBufferRef* hwDeviceCtx = nullptr;
 		if (av_hwdevice_ctx_create(&hwDeviceCtx, selectedConfig->device_type, NULL, NULL, 0) < 0) {
-			deviceError = true;
-			return AppWarning(out, filename).write("Failed to create any HW device.");
+			return VideoReport_error(report, ERROR_CREATE_HW_DEVICE_CONFIG);
 		}
 		devices.loaded[selectedConfig->device_type] = hwDeviceCtx;
 		codecContext->hw_device_ctx = av_buffer_ref(hwDeviceCtx);
-		out << "#MESSAGE Created device context "
-			<< av_hwdevice_get_type_name(selectedConfig->device_type)
-			<< " with pixel format " << selectedConfig->pix_fmt
-			<< " (" << av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name << ")." << std::endl;
+		// For more info about created device context,
+		// see av_hwdevice_get_type_name(selectedConfig->device_type)
+		// and av_pix_fmt_desc_get(selectedConfig->pix_fmt)->name.
 		return true;
 	}
 
-	bool getHWFormat(const AVPixelFormat* pix_fmts) {
-		if (selectedConfig) {
+	static AVPixelFormat get_hw_format(AVCodecContext* ctx, const AVPixelFormat* pix_fmts) {
+		auto streamInfo = (VideoStream*) ctx->opaque;
+		if (streamInfo->selectedConfig) {
 			for (const AVPixelFormat* p = pix_fmts; *p != -1; ++p) {
-				if (*p == selectedConfig->pix_fmt)
-					return true;
+				if (*p == streamInfo->selectedConfig->pix_fmt)
+					return streamInfo->selectedConfig->pix_fmt;
 			}
 		}
-
-		return AppError(out).write("Failed to get HW surface format.");
+		VideoReport_error(streamInfo->report, ERROR_HW_SURFACE_FORMAT);
+		return AV_PIX_FMT_NONE;
 	}
 
-	bool load(const char* filename, AVFormatContext* format, AVMediaType type, HWDevices& devices, size_t deviceIndex) {
-		if ((index = av_find_best_stream(format, type, -1, -1, &codec, 0)) < 0)
-			return type == AVMEDIA_TYPE_VIDEO ? AppError(out, filename).write("Unable to find a video stream.") : false;
+public:
+
+	explicit VideoStream(VideoReport* videoReport): Stream(), selectedConfig(nullptr), report(videoReport) {}
+
+	bool load(AVFormatContext* format, HWDevices& devices, size_t deviceIndex) {
+		if ((index = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0)) < 0)
+			return VideoReport_error(report, ERROR_FIND_VIDEO_STREAM);
 		stream = format->streams[index];
 
-		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
-			&& deviceIndex < devices.available.size()
-			&& !loadDeviceConfigForCodec(filename, devices.available[deviceIndex]))
+		if (deviceIndex < devices.available.size() && !loadHardwareDeviceConfig(devices.available[deviceIndex]))
 			return false;
 
 		if (!(codecContext = avcodec_alloc_context3(codec)))
-			return AppError(out, filename).write("Unable to alloc codec context.");
+			return VideoReport_error(report, ERROR_ALLOC_CODEC_CONTEXT);
 		if (avcodec_parameters_to_context(codecContext, stream->codecpar) < 0)
-			return AppError(out, filename).write("Unable to convert codec parameters to context.");
+			return VideoReport_error(report, ERROR_CONVERT_CODEC_PARAMS);
 
-		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && selectedConfig) {
+		if (selectedConfig) {
 			codecContext->opaque = this;
 			codecContext->get_format = get_hw_format;
 			av_opt_set_int(codecContext, "refcounted_frames", 1, 0);
-			if (!initHWDeviceContext(filename, devices))
+			if (!loadHardwareDeviceContext(devices))
 				return false;
 		}
 
 		if (avcodec_open2(codecContext, codec, NULL) < 0)
-			return AppError(out, filename).write("Unable to open codec.");
+			return VideoReport_error(report, ERROR_OPEN_CODEC);
 
-		if (stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-			if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
-				return AppError(out, filename).write("Video stream has invalid pixel format.");
-			if (codecContext->width <= 0)
-				return AppError(out, filename).write("Video stream has invalid width.");
-			if (codecContext->height <= 0)
-				return AppError(out, filename).write("Video stream has invalid height.");
-		}
+		if (codecContext->pix_fmt == AV_PIX_FMT_NONE)
+			return VideoReport_error(report, ERROR_INVALID_PIX_FMT);
+		if (codecContext->width <= 0)
+			return VideoReport_error(report, ERROR_INVALID_WIDTH);
+		if (codecContext->height <= 0)
+			return VideoReport_error(report, ERROR_INVALID_HEIGHT);
 
 		return true;
-	}
-
-	void clear() {
-		if (codecContext)
-			avcodec_free_context(&codecContext);
-	}
-
-	static AVPixelFormat get_hw_format(AVCodecContext* ctx, const AVPixelFormat* pix_fmts) {
-		Stream* streamInfo = (Stream*) ctx->opaque;
-		if (!streamInfo->getHWFormat(pix_fmts)) {
-			streamInfo->deviceError = true;
-			return AV_PIX_FMT_NONE;
-		}
-		return streamInfo->selectedConfig->pix_fmt;
 	}
 };
 

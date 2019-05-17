@@ -7,28 +7,28 @@ include_directories(${PROJECT_SOURCE_DIR})
 include_directories($ENV{CPATH})
 link_directories($ENV{LIBRARY_PATH})
 set(COMMON_SOURCES
-        core/AppError.hpp
         core/compatWindows.hpp
         core/core.cpp
+        core/errorCodes.hpp
         core/FileHandle.hpp
         core/HWDevices.hpp
-        core/initVideoRaptor.hpp
-        core/Output.hpp
         core/Stream.hpp
         core/ThumbnailContext.hpp
         core/unicode.hpp
         core/utils.hpp
         core/Video.hpp
-        core/VideoDetails.hpp
+        core/VideoInfo.hpp
+        core/VideoReport.hpp
+        core/VideoRaptorInfo.hpp
+        core/VideoThumbnail.hpp
         lib/lodepng/lodepng.cpp
         lib/lodepng/lodepng.h
         lib/utf/utf.hpp
         videoRaptorBatch/videoRaptorBatch.cpp
         videoRaptorBatch/videoRaptorBatch.hpp
-        )
+        core/ErrorReader.hpp)
 set(TEST_SOURCES
-        test.cpp
-        )
+        test.cpp)
 add_library(videoRaptorBatch MODULE ${COMMON_SOURCES})
 add_executable(test ${COMMON_SOURCES} ${TEST_SOURCES})
 

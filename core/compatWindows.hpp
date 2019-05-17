@@ -14,8 +14,8 @@ extern "C" {
 #include <ostream>
 #include <vector>
 #include "FileHandle.hpp"
-#include "AppError.hpp"
 #include "unicode.hpp"
+#include "VideoInfo.hpp"
 
 inline bool fileSize(const char* filename, size_t* out) {
 	struct __stat64 buf;
@@ -51,20 +51,69 @@ inline int64_t seekInFile(void* opaque, int64_t offset, int whence) {
 	return ret < 0 ? ret : _ftelli64(fileHandle->file);
 }
 
-inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** format, AVIOContext** avioContext, std::basic_ostream<char>& out) {
+struct ProbeBuffer {
+	uint8_t* probe_buffer;
+	ProbeBuffer(): probe_buffer(nullptr) {}
+	~ProbeBuffer() {
+		if (probe_buffer)
+			av_freep(&probe_buffer);
+	}
+};
+
+enum CustomFormatContextError {
+	OPEN_ERROR_PROBE_BUFFER_MEMORY		= 1,    // Memory error for probe buffer.
+	OPEN_ERROR_READ_PROBE_BYTES			= 2,    // Error while reading probe bytes from file.
+	OPEN_ERROR_RESET_CURSOR				= 3,    // Error while resetting file cursor to beginning.
+	OPEN_ERROR_INPUT_FORMAT				= 4,    // Error while getting input format.
+	OPEN_ERROR_AVIO_BUFFER_MEMORY		= 5,    // Memory error for AVIO context buffer.
+	OPEN_ERROR_AVIO_INIT				= 6,    // Memory error for AVIO context initialization.
+	OPEN_ERROR_FORMAT_CONTEXT_MEMORY	= 7,    // Error while allocating format context.
+};
+
+inline bool customFormatContextError(VideoReport* videoErrors, unsigned int customFormatContextError) {
+	const char* errorMessage = nullptr;
+	switch (customFormatContextError) {
+		case OPEN_ERROR_PROBE_BUFFER_MEMORY:
+			errorMessage = "Memory error for probe buffer.";
+			break;
+		case OPEN_ERROR_READ_PROBE_BYTES:
+			errorMessage = "Error while reading probe bytes from file.";
+			break;
+		case OPEN_ERROR_RESET_CURSOR:
+			errorMessage = "Error while resetting file cursor to beginning.";
+			break;
+		case OPEN_ERROR_INPUT_FORMAT:
+			errorMessage = "Error while getting input format.";
+			break;
+		case OPEN_ERROR_AVIO_BUFFER_MEMORY:
+			errorMessage = "Memory error for AVIO context buffer.";
+			break;
+		case OPEN_ERROR_AVIO_INIT:
+			errorMessage = "Memory error for AVIO context initialization.";
+			break;
+		case OPEN_ERROR_FORMAT_CONTEXT_MEMORY:
+			errorMessage = "Error while allocating format context.";
+			break;
+		default: break;
+	}
+	return VideoReport_error(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT, errorMessage);
+}
+
+inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** format, AVIOContext** avioContext, VideoReport* videoErrors) {
 	int ret = 0;
 	std::string errorString;
 	size_t avio_ctx_buffer_size = 4096;
 	size_t probe_buffer_size = avio_ctx_buffer_size + AVPROBE_PADDING_SIZE;
 	size_t n_bytes_read = 0;
 	uint8_t* avio_ctx_buffer = nullptr;
-	uint8_t* probe_buffer = nullptr;
 	AVProbeData probeData;
 	AVInputFormat* inputFormat = nullptr;
+	ProbeBuffer probeBuffer;
+	unsigned int asciiError = 0;
 
 	fileHandle.file = fopen(fileHandle.filename, "rb");
 	if (!fileHandle.file) {
-		AppWarning(out, fileHandle.filename).write("Error opening file, retrying with unicode filename handling.");
+		asciiError = ERROR_OPEN_ASCII_FILENAME;
 		// To handle long file names, we assume file name is an absolute path, and we add prefix \\?\.
 		// See (2018/07/29): https://docs.microsoft.com/fr-fr/windows/desktop/FileIO/naming-a-file#maximum-path-length-limitation
 		fileHandle.unicodeFilename.push_back('\\');
@@ -76,52 +125,41 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 		fileHandle.file = _wfopen(fileHandle.unicodeFilename.data(), L"rb");
 	}
 	if (!fileHandle.file)
-		return AppError(out, fileHandle.filename).write("Unable to open file");
+		return VideoReport_error(videoErrors, ERROR_OPEN_FILE | asciiError);
 
 	// Get input format.
-	probe_buffer = (uint8_t*) av_malloc(probe_buffer_size);
-	if (!probe_buffer) {
-		errorString = "Memory error for probe buffer.";
-		goto end;
-	}
-	memset(probe_buffer, 0, probe_buffer_size);
-	n_bytes_read = fread(probe_buffer, 1, avio_ctx_buffer_size, fileHandle.file);
-	if (n_bytes_read != avio_ctx_buffer_size && ferror(fileHandle.file)) {
-		errorString = "Error while reading probe bytes from file.";
-		goto end;
-	}
-	if (fseek(fileHandle.file, 0, SEEK_SET) != 0) {
-		errorString = "Error while resetting file cursor to beginning.";
-		goto end;
-	}
+	probeBuffer.probe_buffer = (uint8_t*) av_malloc(probe_buffer_size);
+	if (!probeBuffer.probe_buffer)
+		return customFormatContextError(videoErrors, OPEN_ERROR_PROBE_BUFFER_MEMORY);
 
-	probeData.buf = probe_buffer;
+	memset(probeBuffer.probe_buffer, 0, probe_buffer_size);
+	n_bytes_read = fread(probeBuffer.probe_buffer, 1, avio_ctx_buffer_size, fileHandle.file);
+	if (n_bytes_read != avio_ctx_buffer_size && ferror(fileHandle.file))
+		return customFormatContextError(videoErrors, OPEN_ERROR_READ_PROBE_BYTES);
+
+	if (fseek(fileHandle.file, 0, SEEK_SET) != 0)
+		return customFormatContextError(videoErrors, OPEN_ERROR_RESET_CURSOR);
+
+	probeData.buf = probeBuffer.probe_buffer;
 	probeData.buf_size = n_bytes_read;
 	probeData.filename = "";
 	probeData.mime_type = nullptr;
 	inputFormat = av_probe_input_format(&probeData, 1);
-	if (!inputFormat) {
-		errorString = "Error while getting input format.";
-		goto end;
-	}
+	if (!inputFormat)
+		return customFormatContextError(videoErrors, OPEN_ERROR_INPUT_FORMAT);
 
 	// Create input format context.
 	avio_ctx_buffer = (uint8_t*) av_malloc(avio_ctx_buffer_size);
-	if (!avio_ctx_buffer) {
-		errorString = "Memory error for AVIO context buffer.";
-		goto end;
-	}
+	if (!avio_ctx_buffer)
+		return customFormatContextError(videoErrors, OPEN_ERROR_AVIO_BUFFER_MEMORY);
 
-	if (!(*avioContext = avio_alloc_context(avio_ctx_buffer, avio_ctx_buffer_size, 0, &fileHandle, readFromFile, NULL, seekInFile))) {
-		errorString = "Memory error for AVIO context initialization.";
-		goto end;
-	}
+	if (!(*avioContext = avio_alloc_context(avio_ctx_buffer, avio_ctx_buffer_size, 0, &fileHandle, readFromFile, NULL, seekInFile)))
+		return customFormatContextError(videoErrors, OPEN_ERROR_AVIO_INIT);
 
 	// Open format context.
-	if (!(*format = avformat_alloc_context())) {
-		errorString = "Error while allocating format context.";
-		goto end;
-	}
+	if (!(*format = avformat_alloc_context()))
+		return customFormatContextError(videoErrors, OPEN_ERROR_FORMAT_CONTEXT_MEMORY);
+
 	(*format)->pb = *avioContext;
 	(*format)->iformat = inputFormat;
 	(*format)->flags = AVFMT_FLAG_CUSTOM_IO;
@@ -129,14 +167,8 @@ inline bool openCustomFormatContext(FileHandle& fileHandle, AVFormatContext** fo
 	if ((ret = avformat_open_input(format, NULL, NULL, NULL)) != 0) {
 		char err_buf[AV_ERROR_MAX_STRING_SIZE];
 		av_make_error_string(err_buf, AV_ERROR_MAX_STRING_SIZE, ret);
-		errorString = "Unable to open custom format context. ";
-		errorString += err_buf;
+		return VideoReport_error(videoErrors, ERROR_CUSTOM_FORMAT_CONTEXT_OPEN, err_buf);
 	};
-	end:
-	if (probe_buffer)
-		av_freep(&probe_buffer);
-	if (!errorString.empty())
-		return AppError(out, fileHandle.filename).write("Error occurred when opening a file: ").write(errorString);
 	return true;
 }
 

@@ -17,7 +17,7 @@ struct HWDevices {
 	std::unordered_map<AVHWDeviceType, AVBufferRef*> loaded;
 	size_t indexUsed;
 
-	explicit HWDevices(std::basic_ostream<char>& out): available(), loaded(), indexUsed(0) {
+	explicit HWDevices(): available(), loaded(), indexUsed(0) {
 		AVHWDeviceType type = AV_HWDEVICE_TYPE_NONE;
 		while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE) {
 			// I don't yet know why, but, if CUDA device is tested at a point and fails,
@@ -25,18 +25,44 @@ struct HWDevices {
 			if (type != AV_HWDEVICE_TYPE_CUDA)
 				available.push_back(type);
 		}
-		out << "#MESSAGE Found " << available.size() << " hardware acceleration device(s)";
-		if (!available.empty()) {
-			out << ": " << av_hwdevice_get_type_name(available[0]);
-			for (size_t i = 1; i < available.size(); ++i)
-				out << ", " << av_hwdevice_get_type_name(available[i]);
-		}
-		out << '.' << std::endl;
 	}
 
 	~HWDevices() {
 		for (auto it = loaded.begin(); it != loaded.end(); ++it)
 			av_buffer_unref(&it->second);
+	}
+
+	size_t countDeviceTypes() const {
+		return available.size();
+	}
+
+	size_t getStringRepresentationLength(const char* separator) const {
+		if (available.empty())
+			return 0;
+		size_t totalSize = strlen(separator) * (available.size() - 1) + 1; // Number of times separator will be printed + terminal character \0.
+		for (auto& deviceType : available) {
+			totalSize += strlen(av_hwdevice_get_type_name(deviceType));
+		}
+		return totalSize;
+	}
+
+	void getStringRepresentation(char* output, const char* separator) const {
+		if (available.empty())
+			return;
+		size_t len_separator = strlen(separator);
+		const char* current_dt_name = av_hwdevice_get_type_name(available[0]);
+		size_t len_current_dt_name = strlen(current_dt_name);
+		memcpy(output, current_dt_name, len_current_dt_name);
+		size_t cursor = len_current_dt_name;
+		for (size_t i = 1; i < available.size(); ++i) {
+			memcpy(output + cursor, separator, len_separator);
+			cursor += len_separator;
+			current_dt_name = av_hwdevice_get_type_name(available[i]);
+			len_current_dt_name = strlen(current_dt_name);
+			memcpy(output + cursor, current_dt_name, len_current_dt_name);
+			cursor += len_current_dt_name;
+		}
+		output[cursor] = '\0';
 	}
 };
 
