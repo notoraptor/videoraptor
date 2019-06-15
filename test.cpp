@@ -23,11 +23,11 @@ void printDetails(VideoInfo* videoDetails) {
 	std::cout << "\theight            : " << videoDetails->height << std::endl;
 	std::cout << "\tframe_rate_num    : " << videoDetails->frame_rate_num << std::endl;
 	std::cout << "\tframe_rate_den    : " << videoDetails->frame_rate_den << std::endl;
-	std::cout << "\tsample_rate       : " << videoDetails->sample_rate << std::endl;
 	std::cout << "\tduration          : " << videoDetails->duration << std::endl;
 	std::cout << "\tduration_time_base: " << videoDetails->duration_time_base << std::endl;
 	std::cout << "\tsize              : " << videoDetails->size << std::endl;
-	std::cout << "\tbit_rate          : " << videoDetails->bit_rate << std::endl;
+	std::cout << "\tsample_rate       : " << videoDetails->sample_rate << std::endl;
+	std::cout << "\taudio_bit_rate    : " << videoDetails->audio_bit_rate << std::endl;
 	std::cout << "END DETAILS" << std::endl;
 }
 

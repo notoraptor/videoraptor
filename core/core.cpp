@@ -121,6 +121,8 @@ void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
 	videoInfo->container_format = nullptr;
 	videoInfo->audio_codec = nullptr;
 	videoInfo->video_codec = nullptr;
+	videoInfo->audio_codec_description = nullptr;
+	videoInfo->video_codec_description = nullptr;
 	videoInfo->width = 0;
 	videoInfo->height = 0;
 	videoInfo->frame_rate_num = 0;
@@ -129,7 +131,7 @@ void VideoInfo_init(VideoInfo* videoInfo, const char* filename) {
 	videoInfo->duration = 0;
 	videoInfo->duration_time_base = 0;
 	videoInfo->size = 0;
-	videoInfo->bit_rate = 0;
+	videoInfo->audio_bit_rate = 0;
 	VideoReport_init(&videoInfo->report);
 }
 
@@ -140,4 +142,6 @@ void VideoInfo_clear(VideoInfo* videoInfo) {
 	delete[] videoInfo->container_format;
 	delete[] videoInfo->audio_codec;
 	delete[] videoInfo->video_codec;
+	delete[] videoInfo->audio_codec_description;
+	delete[] videoInfo->video_codec_description;
 }

@@ -215,13 +215,15 @@ public:
 		videoDetails->container_format = copyString(format->iformat->long_name);
 		videoDetails->width = videoStream.codecContext->width;
 		videoDetails->height = videoStream.codecContext->height;
-		videoDetails->video_codec = copyString(videoStream.codec->long_name);
+		videoDetails->video_codec = copyString(videoStream.codec->name);
+		videoDetails->video_codec_description = copyString(videoStream.codec->long_name);
 		videoDetails->frame_rate_num = frame_rate->num;
 		videoDetails->frame_rate_den = frame_rate->den;
 		if (audioStream.index >= 0) {
-			videoDetails->audio_codec = copyString(audioStream.codec->long_name);
+			videoDetails->audio_codec = copyString(audioStream.codec->name);
+			videoDetails->audio_codec_description = copyString(audioStream.codec->long_name);
 			videoDetails->sample_rate = audioStream.codecContext->sample_rate;
-			videoDetails->bit_rate = audioStream.codecContext->bit_rate;
+			videoDetails->audio_bit_rate = audioStream.codecContext->bit_rate;
 		}
 		if (AVDictionaryEntry* tag = av_dict_get(format->metadata, "title", NULL, AV_DICT_IGNORE_SUFFIX))
 			videoDetails->title = copyString(tag->value);

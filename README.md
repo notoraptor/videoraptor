@@ -1,8 +1,10 @@
 # Library `videoRaptorBatch`
 
-`cd cmake-build-release`
+`md build`
 
-`g++ -c ..\videoRaptorBatch\videoRaptorBatch.cpp ..\core\common.cpp ..\lodepng\lodepng.cpp -I .. -I %CPATH% -L %LIBRARY_PATH% -lavcodec -lavformat -lavutil -lswscale -O3`
+`cd build`
+
+`g++ -c ..\core\*.cpp ..\videoRaptorBatch\*.cpp ..\lib\lodepng\*.cpp  -I .. -I %CPATH% -L %LIBRARY_PATH% -lavcodec -lavformat -lavutil -lswscale -O3`
 
 `g++ -shared -o videoRaptorBatch.dll *.o -fPIC -I .. -I %CPATH% -L %LIBRARY_PATH% -lavcodec -lavformat -lavutil -lswscale -O3`
 
