@@ -12,7 +12,7 @@ extern "C" {
 	int videoRaptorDetails(int length, VideoInfo** pVideoInfo);
 	int videoRaptorThumbnails(int length, VideoThumbnail** pVideoThumbnail);
 	int batchAlignmentScore(const int** A, const int** B, int rows, int columns, int matchScore, int diffScore, int gapScore);
-	double batchAlignmentScoreByDiff(const int** A, const int** B, int rows, int columns, int minVal, int maxVal, int gapScore);
+	double batchAlignmentScoreByDiff(const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore);
 };
 
 

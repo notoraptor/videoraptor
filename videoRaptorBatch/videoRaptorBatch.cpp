@@ -149,13 +149,13 @@ double alignmentScoreByDiff(std::vector<double>& matrix, const int* a, const int
 	return matrix[matrixSize - 1];
 }
 
-double batchAlignmentScoreByDiff(const int** A, const int** B, int rows, int columns, int minVal, int maxVal, int gapScore) {
+double batchAlignmentScoreByDiff(const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore) {
 	double totalScore = 0;
 	int sideLength = columns + 1;
 	int matrixSize = sideLength * sideLength;
 	std::vector<double> matrix(matrixSize, 0);
 	double interval = maxVal - minVal;
 	for (int i = 0; i < rows; ++i)
-		totalScore += alignmentScoreByDiff(matrix, A[i], B[i], columns, interval, gapScore);
+		totalScore += alignmentScoreByDiff(matrix, A + i * columns, B + i * columns, columns, interval, gapScore);
 	return totalScore;
 }
