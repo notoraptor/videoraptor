@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <vector>
+#include <iostream>
+#include <cstring>
 #include "alignment.hpp"
 
 double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, int columns, double interval, int gapScore) {
@@ -18,7 +20,7 @@ double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, i
 	for (int i = 1; i < sideLength; ++i) {
 		for (int j = 1; j < sideLength; ++j) {
 			matrix[i * sideLength + j] = std::max(
-					matrix[(i - 1) * sideLength + (j - 1)] + 2 * ((interval - abs(a[i - 1] - b[j - 1]))/interval) - 1,
+					matrix[(i - 1) * sideLength + (j - 1)] + 2 * ((interval - abs(a[i - 1] - b[j - 1])) / interval) - 1,
 					std::max(
 							matrix[(i - 1) * sideLength + j] + gapScore,
 							matrix[i * sideLength + (j - 1)] + gapScore
@@ -40,37 +42,46 @@ double batchAlignmentScore(const int* A, const int* B, int rows, int columns, in
 	return totalScore;
 }
 
-void Sequence_init(Sequence* sequence) {
-	sequence->classification = -1;
-	sequence->score = 0;
-}
-
 bool classifiedSequenceComparator(Sequence* a, Sequence* b) {
-	return a->classification < b->classification || a->score < b->score;
+	return a->classification < b->classification || (a->classification == b->classification && a->score < b->score);
 }
 
-double alignSequences(Sequence* a, Sequence* b, int rows, int columns, int minVal, int maxVal, int gapScore) {
-	double scoreRed = batchAlignmentScore(a->red, b->red, rows, columns, minVal, maxVal, gapScore);
-	double scoreGreen = batchAlignmentScore(a->green, b->green, rows, columns, minVal, maxVal, gapScore);
-	double scoreBlue = batchAlignmentScore(a->blue, b->blue, rows, columns, minVal, maxVal, gapScore);
-	int minAlignmentScore = std::min(-1, gapScore) * rows * columns;
-	int maxAlignmentScore = std::max(1, gapScore) * rows * columns;
-	return (scoreRed + scoreGreen + scoreBlue - 3 * minAlignmentScore) / (3 * (maxAlignmentScore - minAlignmentScore));
-}
+struct Aligner {
+	int rows;
+	int columns;
+	int minVal;
+	int maxVal;
+	int gapScore;
+	int minAlignmentScore;
+	int maxAlignmentScore;
+
+	Aligner(int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
+			rows(theRows), columns(theColumns), minVal(theMinVal), maxVal(theMaxVal), gapScore(theGapScore) {
+		minAlignmentScore = std::min(-1, gapScore) * rows * columns;
+		maxAlignmentScore = std::max(1, gapScore) * rows * columns;
+	}
+
+	double align(Sequence* a, Sequence* b) {
+		double scoreR = batchAlignmentScore(a->r, b->r, rows, columns, minVal, maxVal, gapScore);
+		double scoreG = batchAlignmentScore(a->g, b->g, rows, columns, minVal, maxVal, gapScore);
+		double scoreB = batchAlignmentScore(a->b, b->b, rows, columns, minVal, maxVal, gapScore);
+		return (scoreR + scoreG + scoreB - 3 * minAlignmentScore) / (3 * (maxAlignmentScore - minAlignmentScore));
+	}
+};
 
 int classifySimilarities(
 		Sequence** rawSequences, int nbSequences, double similarityLimit, double differenceLimit,
 		int rows, int columns, int minVal, int maxVal, int gapScore) {
-	std::vector<Sequence*> sequences(rawSequences, rawSequences + nbSequences);
-	if (sequences.size() != (size_t)nbSequences)
-		return -1;
+	Aligner aligner(rows, columns, minVal, maxVal, gapScore);
+	std::vector<Sequence*> sequences(nbSequences, nullptr);
+	memcpy(sequences.data(), rawSequences, nbSequences * sizeof(Sequence*));
 	// Initialize first sequence.
 	sequences[0]->classification = 0;
 	sequences[0]->score = 1;
 	int nbFoundSimilarSequences = 1;
 	// Compute score and match (0) / mismatch (1) classification for next sequences vs first sequence.
 	for (int i = 1; i < nbSequences; ++i) {
-		sequences[i]->score = alignSequences(sequences[0], sequences[i], rows, columns, minVal, maxVal, gapScore);
+		sequences[i]->score = aligner.align(sequences[0], sequences[i]);
 		if (sequences[i]->score >= similarityLimit) {
 			sequences[i]->classification = 0;
 			++nbFoundSimilarSequences;
@@ -78,39 +89,25 @@ int classifySimilarities(
 			sequences[i]->classification = 1;
 		}
 	}
-	if (nbFoundSimilarSequences != 1) {
-		// We found sequences similar to the first one.
-		// Sort sequences by classification (put similar sequences at top) then by score.
-		std::sort(sequences.begin(), sequences.end(), classifiedSequenceComparator);
-	}
+	// Sort sequences by classification (put similar sequences at top) then by score.
+	std::sort(sequences.begin(), sequences.end(), classifiedSequenceComparator);
 	int nextClass = 1;
 	int start = nbFoundSimilarSequences;
 	int cursor = start + 1;
 	while (cursor < nbSequences) {
-		double startScore = sequences[start]->score;
-		double currScore = sequences[cursor]->score;
-		double distance = startScore - currScore;
-		if (distance < 0)
-			distance = -distance;
-		if (distance > differenceLimit) {
+		double distance = sequences[start]->score - sequences[cursor]->score;
+		if (distance < -differenceLimit || distance > differenceLimit) {
 			// Potential similar group in [start; cursor - 1]
 			for (int i = start; i < cursor; ++i) {
 				sequences[i]->classification = nextClass;
 			}
 			++nextClass;
-			if (cursor == nbSequences - 1) {
-				sequences[cursor]->classification = nextClass;
-				++nextClass;
-			} else {
-				start = cursor;
-			}
-		} else if (cursor == nbSequences - 1) {
-			for (int i = start; i < nbSequences; ++i) {
-				sequences[i]->classification = nextClass;
-			}
-			++nextClass;
+			start = cursor;
 		}
 		++cursor;
+	}
+	for (int i = start; i < nbSequences; ++i) {
+		sequences[i]->classification = nextClass;
 	}
 	return nbFoundSimilarSequences;
 }

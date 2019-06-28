@@ -6,9 +6,9 @@
 #define VIDEORAPTOR_ALIGNMENT_HPP
 
 struct Sequence {
-	int* red;
-	int* green;
-	int* blue;
+	int* r;
+	int* g;
+	int* b;
 	double score;
 	int classification;
 };
@@ -16,7 +16,6 @@ struct Sequence {
 
 extern "C" {
 	double batchAlignmentScore(const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore);
-	void Sequence_init(Sequence* sequence);
 	int classifySimilarities(
 			Sequence** sequences, int nbSequences, double similarityLimit, double differenceLimit,
 			int rows, int columns, int minVal, int maxVal, int gapScore);
