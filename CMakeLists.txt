@@ -28,7 +28,7 @@ set(COMMON_SOURCES
         videoRaptorBatch/videoRaptorBatch.hpp
         core/ErrorReader.hpp)
 set(TEST_SOURCES
-        test.cpp)
+        test.cpp alignment/alignment.cpp alignment/alignment.hpp)
 add_library(videoRaptorBatch MODULE ${COMMON_SOURCES})
 add_executable(test ${COMMON_SOURCES} ${TEST_SOURCES})
 
