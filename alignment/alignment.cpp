@@ -14,10 +14,8 @@ double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, i
 	for (int i = 0; i < sideLength; ++i) {
 		matrix[i] = i * gapScore;
 	}
-	for (int j = 1; j < sideLength; ++j) {
-		matrix[j * sideLength] = j * gapScore;
-	}
 	for (int i = 1; i < sideLength; ++i) {
+		matrix[i * sideLength] = i * gapScore;
 		for (int j = 1; j < sideLength; ++j) {
 			matrix[i * sideLength + j] = std::max(
 					matrix[(i - 1) * sideLength + (j - 1)] + 2 * ((interval - abs(a[i - 1] - b[j - 1])) / interval) - 1,
@@ -32,21 +30,18 @@ double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, i
 }
 
 double batchAlignmentScore(const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore) {
-	double totalScore = 0;
 	int sideLength = columns + 1;
 	int matrixSize = sideLength * sideLength;
 	std::vector<double> matrix(matrixSize, 0);
 	double interval = maxVal - minVal;
+	double totalScore = 0;
 	for (int i = 0; i < rows; ++i)
 		totalScore += alignmentScore(matrix, A + i * columns, B + i * columns, columns, interval, gapScore);
 	return totalScore;
 }
 
-bool classifiedSequenceComparator(Sequence* a, Sequence* b) {
-	return a->classification < b->classification || (a->classification == b->classification && a->score < b->score);
-}
-
 struct Aligner {
+	bool gray;
 	int rows;
 	int columns;
 	int minVal;
@@ -54,25 +49,69 @@ struct Aligner {
 	int gapScore;
 	int minAlignmentScore;
 	int maxAlignmentScore;
+	int sideLength;
+	double interval;
+	int alignmentScoreInterval;
+	int matrixSize;
+	std::vector<double> matrix;
 
-	Aligner(int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
-			rows(theRows), columns(theColumns), minVal(theMinVal), maxVal(theMaxVal), gapScore(theGapScore) {
-		minAlignmentScore = std::min(-1, gapScore) * rows * columns;
-		maxAlignmentScore = std::max(1, gapScore) * rows * columns;
+	Aligner(bool useGray, int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
+			gray(useGray),
+			rows(theRows), columns(theColumns), minVal(theMinVal), maxVal(theMaxVal), gapScore(theGapScore),
+			minAlignmentScore(std::min(-1, theGapScore) * theRows * theColumns),
+			maxAlignmentScore(std::max(+1, theGapScore) * theRows * theColumns),
+			sideLength(theColumns + 1),
+			interval(theMaxVal - theMinVal),
+			matrix() {
+		alignmentScoreInterval = maxAlignmentScore - minAlignmentScore;
+		matrixSize = sideLength * sideLength;
+		matrix.assign(matrixSize, 0);
+	}
+
+	double computeAlignmentScore(const int* a, const int* b) {
+		for (int i = 0; i < sideLength; ++i) {
+			matrix[i] = i * gapScore;
+		}
+		for (int i = 1; i < sideLength; ++i) {
+			matrix[i * sideLength] = i * gapScore;
+			for (int j = 1; j < sideLength; ++j) {
+				matrix[i * sideLength + j] = std::max(
+						matrix[(i - 1) * sideLength + (j - 1)] + 2 * ((interval - abs(a[i - 1] - b[j - 1])) / interval) - 1,
+						std::max(
+								matrix[(i - 1) * sideLength + j] + gapScore,
+								matrix[i * sideLength + (j - 1)] + gapScore
+						)
+				);
+			}
+		}
+		return matrix[matrixSize - 1];
+	}
+
+	double computeBatchAlignmentScore(const int* A, const int* B) {
+		double totalScore = 0;
+		for (int i = 0; i < rows; ++i)
+			totalScore += computeAlignmentScore(A + i * columns, B + i * columns);
+		return totalScore;
 	}
 
 	double align(Sequence* a, Sequence* b) {
-		double scoreR = batchAlignmentScore(a->r, b->r, rows, columns, minVal, maxVal, gapScore);
-		double scoreG = batchAlignmentScore(a->g, b->g, rows, columns, minVal, maxVal, gapScore);
-		double scoreB = batchAlignmentScore(a->b, b->b, rows, columns, minVal, maxVal, gapScore);
-		return (scoreR + scoreG + scoreB - 3 * minAlignmentScore) / (3 * (maxAlignmentScore - minAlignmentScore));
+		if (gray)
+			return (computeBatchAlignmentScore(a->i, b->i) - minAlignmentScore) / alignmentScoreInterval;
+		double scoreR = computeBatchAlignmentScore(a->r, b->r);
+		double scoreG = computeBatchAlignmentScore(a->g, b->g);
+		double scoreB = computeBatchAlignmentScore(a->b, b->b);
+		return (scoreR + scoreG + scoreB - 3 * minAlignmentScore) / (3 * alignmentScoreInterval);
 	}
 };
 
+bool classifiedSequenceComparator(Sequence* a, Sequence* b) {
+	return a->classification < b->classification || (a->classification == b->classification && a->score < b->score);
+}
+
 int classifySimilarities(
-		Sequence** rawSequences, int nbSequences, double similarityLimit, double differenceLimit,
+		bool gray, Sequence** rawSequences, int nbSequences, double similarityLimit, double differenceLimit,
 		int rows, int columns, int minVal, int maxVal, int gapScore) {
-	Aligner aligner(rows, columns, minVal, maxVal, gapScore);
+	Aligner aligner(gray, rows, columns, minVal, maxVal, gapScore);
 	std::vector<Sequence*> sequences(nbSequences, nullptr);
 	memcpy(sequences.data(), rawSequences, nbSequences * sizeof(Sequence*));
 	// Initialize first sequence.
