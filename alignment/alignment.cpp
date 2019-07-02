@@ -41,12 +41,12 @@ double batchAlignmentScore(const int* A, const int* B, int rows, int columns, in
 }
 
 struct Aligner {
-	bool gray;
 	int rows;
 	int columns;
 	int minVal;
 	int maxVal;
 	int gapScore;
+
 	int minAlignmentScore;
 	int maxAlignmentScore;
 	int sideLength;
@@ -55,8 +55,7 @@ struct Aligner {
 	int matrixSize;
 	std::vector<double> matrix;
 
-	Aligner(bool useGray, int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
-			gray(useGray),
+	Aligner(int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
 			rows(theRows), columns(theColumns), minVal(theMinVal), maxVal(theMaxVal), gapScore(theGapScore),
 			minAlignmentScore(std::min(-1, theGapScore) * theRows * theColumns),
 			maxAlignmentScore(std::max(+1, theGapScore) * theRows * theColumns),
@@ -95,8 +94,6 @@ struct Aligner {
 	}
 
 	double align(Sequence* a, Sequence* b) {
-		if (gray)
-			return (computeBatchAlignmentScore(a->i, b->i) - minAlignmentScore) / alignmentScoreInterval;
 		double scoreR = computeBatchAlignmentScore(a->r, b->r);
 		double scoreG = computeBatchAlignmentScore(a->g, b->g);
 		double scoreB = computeBatchAlignmentScore(a->b, b->b);
@@ -109,9 +106,9 @@ bool classifiedSequenceComparator(Sequence* a, Sequence* b) {
 }
 
 int classifySimilarities(
-		bool gray, Sequence** rawSequences, int nbSequences, double similarityLimit, double differenceLimit,
+		Sequence** rawSequences, int nbSequences, double similarityLimit, double differenceLimit,
 		int rows, int columns, int minVal, int maxVal, int gapScore) {
-	Aligner aligner(gray, rows, columns, minVal, maxVal, gapScore);
+	Aligner aligner(rows, columns, minVal, maxVal, gapScore);
 	std::vector<Sequence*> sequences(nbSequences, nullptr);
 	memcpy(sequences.data(), rawSequences, nbSequences * sizeof(Sequence*));
 	// Initialize first sequence.
@@ -133,6 +130,18 @@ int classifySimilarities(
 	int nextClass = 1;
 	int start = nbFoundSimilarSequences;
 	int cursor = start + 1;
+	// Find first group of potential similar sequences.
+	// If found, group is already set with class 1, so we will just update next class.
+	while (cursor < nbSequences) {
+		double distance = sequences[start]->score - sequences[cursor]->score;
+		if (distance < -differenceLimit || distance > differenceLimit) {
+			++nextClass;
+			start = cursor;
+			break;
+		}
+		++cursor;
+	}
+	// Find next groups of potential similar sequences.
 	while (cursor < nbSequences) {
 		double distance = sequences[start]->score - sequences[cursor]->score;
 		if (distance < -differenceLimit || distance > differenceLimit) {

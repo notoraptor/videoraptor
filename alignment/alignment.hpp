@@ -19,7 +19,7 @@ extern "C" {
 	double batchAlignmentScore(
 			const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore);
 	int classifySimilarities(
-			bool gray, Sequence** sequences, int nbSequences, double similarityLimit, double differenceLimit,
+			Sequence** sequences, int nbSequences, double similarityLimit, double differenceLimit,
 			int rows, int columns, int minVal, int maxVal, int gapScore);
 };
 
