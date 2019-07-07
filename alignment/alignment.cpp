@@ -159,3 +159,35 @@ int classifySimilarities(
 	}
 	return nbFoundSimilarSequences;
 }
+
+uint64_t arrayDistance(int* a, int* b, int len) {
+	uint64_t total = 0;
+	for (int i = 0; i < len; ++i)
+		total += std::abs(a[i] - b[i]);
+	return total;
+}
+
+void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double similarityLimit, int v) {
+	for (int i = 0; i < nbSequences; ++i) {
+		if (sequences[i]->classification != -1)
+			continue;
+		sequences[i]->classification = i;
+		for (int j = i + 1; j < nbSequences; ++j) {
+			if (sequences[j]->classification != -1)
+				continue;
+			double score = (
+					3 * n * v
+					- arrayDistance(sequences[i]->r, sequences[j]->r, n)
+					- arrayDistance(sequences[i]->g, sequences[j]->g, n)
+					- arrayDistance(sequences[i]->b, sequences[j]->b, n)
+					) / (3. * n * v);
+			if (score >= similarityLimit) {
+				sequences[j]->classification = i;
+				sequences[j]->score = score;
+				std::cout << "\t(" << i << "; " << j << ") " << score << std::endl;
+			}
+			if (((i + 1) * (j + 1)) % (20000) == 0)
+				std::cout << "At " << i << " vs " << j << " on " << nbSequences << std::endl;
+		}
+	}
+}
