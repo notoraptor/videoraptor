@@ -35,10 +35,10 @@ set(TEST_SOURCES
 add_library(videoRaptorBatch MODULE ${COMMON_SOURCES})
 add_executable(test ${COMMON_SOURCES} ${TEST_SOURCES})
 
-target_link_libraries(videoRaptorBatch avcodec avformat avutil swscale)
+target_link_libraries(videoRaptorBatch avcodec avformat avutil swscale -static-libgcc -static-libstdc++)
 set_target_properties(videoRaptorBatch PROPERTIES PREFIX "")
 set_target_properties(videoRaptorBatch PROPERTIES VERSION ${PROJECT_VERSION})
 set_target_properties(videoRaptorBatch PROPERTIES SOVERSION 1)
 install(TARGETS videoRaptorBatch LIBRARY DESTINATION $ENV{BIN_PATH})
-target_link_libraries(test avcodec avformat avutil swscale)
+target_link_libraries(test avcodec avformat avutil swscale -static-libgcc -static-libstdc++)
 

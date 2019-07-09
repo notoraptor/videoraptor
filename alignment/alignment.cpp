@@ -6,6 +6,7 @@
 #include <vector>
 #include <iostream>
 #include <cstring>
+#include <thread>
 #include "alignment.hpp"
 
 double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, int columns, double interval, int gapScore) {
@@ -160,11 +161,24 @@ int classifySimilarities(
 	return nbFoundSimilarSequences;
 }
 
-uint64_t arrayDistance(int* a, int* b, int len) {
+inline uint64_t arrayDistance(int* a, int* b, int len) {
 	uint64_t total = 0;
 	for (int i = 0; i < len; ++i)
 		total += std::abs(a[i] - b[i]);
 	return total;
+}
+
+void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int jFrom, int jTo) {
+	for (int j = jFrom; j < jTo; ++j) {
+		if (sequences[j]->classification != -1)
+			continue;
+		double score = (n * v - arrayDistance(sequences[i]->i, sequences[j]->i, n)) / double(n * v);
+		if (score >= similarityLimit) {
+			sequences[j]->classification = i;
+			sequences[j]->score = score;
+			std::cout << i << " " << j << " - " << score << std::endl;
+		}
+	}
 }
 
 void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double similarityLimit, int v) {
@@ -172,17 +186,12 @@ void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double 
 		if (sequences[i]->classification != -1)
 			continue;
 		sequences[i]->classification = i;
-		for (int j = i + 1; j < nbSequences; ++j) {
-			if (sequences[j]->classification != -1)
-				continue;
-			double score = (n * v - arrayDistance(sequences[i]->i, sequences[j]->i, n)) / double(n * v);
-			if (score >= similarityLimit) {
-				sequences[j]->classification = i;
-				sequences[j]->score = score;
-				std::cout << "\t(" << i << "; " << j << ") " << score << std::endl;
-			}
-			if (((i + 1) * (j + 1)) % (50000) == 0)
-				std::cout << "At " << i << " vs " << j << " on " << nbSequences << std::endl;
-		}
+		int b = i + 1 + (nbSequences - i - 1) / 2;
+		std::thread process1(sub, sequences, n, similarityLimit, v, i, i + 1, b);
+		std::thread process2(sub, sequences, n, similarityLimit, v, i, b, nbSequences);
+		process1.join();
+		process2.join();
+		if ((i + 1) % 1000 == 0)
+			std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;
 	}
 }

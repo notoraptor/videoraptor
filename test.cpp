@@ -6,6 +6,7 @@
 #include <core/VideoRaptorInfo.hpp>
 #include <videoRaptorBatch/videoRaptorBatch.hpp>
 #include <core/ErrorReader.hpp>
+#include <alignment/alignment.hpp>
 
 void printDetails(VideoInfo* videoDetails) {
 	std::cout << "BEGIN DETAILS" << std::endl;
@@ -98,21 +99,18 @@ void printVideoRaptorInfo() {
 }
 
 int main(int lenArgs, char* args[]) {
-	// Test error printing.
-	testErrorPrinting();
-
-	// Print some info.
-	printVideoRaptorInfo();
-
-	// Parse arguments.
-	if (lenArgs < 2) {
-		std::cerr << "No files provided." << std::endl;
-		return EXIT_FAILURE;
-	}
-	for (int i = 1; i < lenArgs; ++i) {
-		std::ostringstream oss;
-		oss << i;
-		test(args[i], oss.str().c_str());
-	}
+	int t1[] = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3};
+	int t2[] = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3};
+	Sequence s1;
+	Sequence s2;
+	Sequence* ts[] = {&s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2};
+	s1.i = t1;
+	s1.score = 0;
+	s1.classification = -1;
+	s2.i = t2;
+	s2.score = 0;
+	s2.classification = -1;
+	std::cout << "aligning ..." << std::endl;
+	classifySimilarities2(ts, 16, 21, 0.5, 255);
 	return EXIT_SUCCESS;
 }
