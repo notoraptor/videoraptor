@@ -161,8 +161,8 @@ int classifySimilarities(
 	return nbFoundSimilarSequences;
 }
 
-inline int arrayDistance(int* a, int* b, int len) {
-	int total = 0;
+inline uint64_t arrayDistance(int* a, int* b, int len) {
+	uint64_t total = 0;
 	for (int i = 0; i < len; ++i)
 		total += std::abs(a[i] - b[i]);
 	return total;
@@ -172,7 +172,12 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 	for (int j = jFrom; j < jTo; ++j) {
 		if (sequences[j]->classification != -1)
 			continue;
-		double score = (n * v - arrayDistance(sequences[i]->i, sequences[j]->i, n)) / double(n * v);
+		double score = (
+				uint64_t(3) * n * v
+				- arrayDistance(sequences[i]->r, sequences[j]->r, n)
+				- arrayDistance(sequences[i]->g, sequences[j]->g, n)
+				- arrayDistance(sequences[i]->b, sequences[j]->b, n)
+				)/ double(3 * n * v);
 		if (score >= similarityLimit) {
 			sequences[j]->classification = i;
 			sequences[j]->score = score;
@@ -187,14 +192,18 @@ void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double 
 			continue;
 		sequences[i]->classification = i;
 		int a = i + 1;
-		int l = (nbSequences - i - 1) / 2;
+		int l = (nbSequences - i - 1) / 4;
 		std::thread process1(sub, sequences, n, similarityLimit, v, i, a, a + l);
-		std::thread process2(sub, sequences, n, similarityLimit, v, i, a + l, nbSequences);
+		std::thread process2(sub, sequences, n, similarityLimit, v, i, a + l, a + 2 * l);
+		std::thread process3(sub, sequences, n, similarityLimit, v, i, a + 2 * l, a + 3 * l);
+		std::thread process4(sub, sequences, n, similarityLimit, v, i, a + 3 * l, nbSequences);
 		process1.join();
 		process2.join();
+		process3.join();
+		process4.join();
 		if ((i + 1) % 1000 == 0) {
 			std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;
-			std::cout << "[" << a << " " << a + l << " " << nbSequences << "]" << std::endl;
+			std::cout << "[" << a << " " << l << " " << nbSequences << "]" << std::endl;
 		}
 	}
 }
