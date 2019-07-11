@@ -7,6 +7,7 @@
 #include <iostream>
 #include <cstring>
 #include <thread>
+#include <cmath>
 #include "alignment.hpp"
 
 double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, int columns, double interval, int gapScore) {
@@ -94,7 +95,7 @@ struct Aligner {
 		return totalScore;
 	}
 
-	double align(Sequence* a, Sequence* b) {
+	double align(const Sequence* a, const Sequence* b) {
 		double scoreR = computeBatchAlignmentScore(a->r, b->r);
 		double scoreG = computeBatchAlignmentScore(a->g, b->g);
 		double scoreB = computeBatchAlignmentScore(a->b, b->b);
@@ -161,7 +162,7 @@ int classifySimilarities(
 	return nbFoundSimilarSequences;
 }
 
-inline uint64_t arrayDistance(int* a, int* b, int len) {
+inline uint64_t arrayDistance(const int* a, const int* b, int len) {
 	uint64_t total = 0;
 	for (int i = 0; i < len; ++i)
 		total += std::abs(a[i] - b[i]);
@@ -169,6 +170,11 @@ inline uint64_t arrayDistance(int* a, int* b, int len) {
 }
 
 void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int jFrom, int jTo) {
+	int side = int(sqrt(n));
+	Aligner aligner(side, side, 0, v, -1);
+	double alignmentLimit = similarityLimit + ((1 - similarityLimit) / 2);
+	alignmentLimit = 0.94;
+	alignmentLimit = 0.91;
 	for (int j = jFrom; j < jTo; ++j) {
 		if (sequences[j]->classification != -1)
 			continue;
@@ -179,31 +185,40 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 				- arrayDistance(sequences[i]->b, sequences[j]->b, n)
 				)/ double(3 * n * v);
 		if (score >= similarityLimit) {
-			sequences[j]->classification = i;
-			sequences[j]->score = score;
-			// std::cout << i << " " << j << " - " << score << std::endl;
+			score = aligner.align(sequences[i], sequences[j]);
+			if (score >= alignmentLimit) {
+				sequences[j]->classification = i;
+				sequences[j]->score = score;
+				// std::cout << i << " " << j << " - " << score << std::endl;
+			}
 		}
 	}
 }
 
 void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double similarityLimit, int v) {
+	int side = int(sqrt(n));
+	if (side * side != n) {
+		std::cerr << "Error: " << side << "^2 != " << n << std::endl;
+		return;
+	}
+	int nbThreads = 4;
 	for (int i = 0; i < nbSequences - 1; ++i) {
 		if (sequences[i]->classification != -1)
 			continue;
 		sequences[i]->classification = i;
 		int a = i + 1;
-		int l = (nbSequences - i - 1) / 4;
-		std::thread process1(sub, sequences, n, similarityLimit, v, i, a, a + l);
-		std::thread process2(sub, sequences, n, similarityLimit, v, i, a + l, a + 2 * l);
-		std::thread process3(sub, sequences, n, similarityLimit, v, i, a + 2 * l, a + 3 * l);
-		std::thread process4(sub, sequences, n, similarityLimit, v, i, a + 3 * l, nbSequences);
-		process1.join();
-		process2.join();
-		process3.join();
-		process4.join();
+		int l = (nbSequences - i - 1) / nbThreads;
+		std::vector<std::thread> processes(nbThreads);
+		for (int t = 0; t < nbThreads - 1; ++t) {
+			processes[t] = std::thread(sub, sequences, n, similarityLimit, v, i, a + t * l, a + (t + 1) * l);
+		}
+		processes[nbThreads - 1] = std::thread(sub, sequences, n, similarityLimit, v, i, a + (nbThreads - 1) * l, nbSequences);
+		for (auto& process: processes)
+			process.join();
 		if ((i + 1) % 1000 == 0) {
-			std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;
-			std::cout << "[" << a << " " << l << " " << nbSequences << "]" << std::endl;
+			std::cout
+				<< "(*) Image " << i + 1 << " / " << nbSequences
+				<< " (" << l << " per thread on " << nbThreads << " threads)" << std::endl;
 		}
 	}
 }
