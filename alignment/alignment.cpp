@@ -7,7 +7,6 @@
 #include <iostream>
 #include <cstring>
 #include <thread>
-#include <cmath>
 #include "alignment.hpp"
 
 double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, int columns, double interval, int gapScore) {
@@ -169,19 +168,6 @@ inline uint64_t arrayDistance(int* a, int* b, int len) {
 	return total;
 }
 
-void subAlign(Aligner* aligner, Sequence** sequences, double similarityLimit, int i, int from, int limit) {
-	for (int j = from; j < limit; ++j) {
-		if (sequences[j]->classification != -1)
-			continue;
-		double score = aligner->align(sequences[i], sequences[j]);
-		if (score >= similarityLimit) {
-			sequences[j]->classification = i;
-			sequences[j]->score = score;
-			std::cout << i << " " << j << " - " << score << std::endl;
-		}
-	}
-}
-
 void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int jFrom, int jTo) {
 	for (int j = jFrom; j < jTo; ++j) {
 		if (sequences[j]->classification != -1)
@@ -201,55 +187,20 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 }
 
 void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double similarityLimit, int v) {
-	int rows = int(sqrt(n));
-	int cols = rows;
-	if (rows * cols != n) {
-		std::cerr << "Error: rows (" << rows <<  ") * cols (" << cols << ") != n (" << n << ")" << std::endl;
-		return;
-	}
-	int minVal = 0;
-	int maxVal = v;
-	int gapScore = -1;
-	Aligner aligner(rows, cols, minVal, maxVal, gapScore);
 	for (int i = 0; i < nbSequences - 1; ++i) {
 		if (sequences[i]->classification != -1)
 			continue;
 		sequences[i]->classification = i;
 		int a = i + 1;
-		int l = (nbSequences - i - 1) / 16;
-		std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;
-		std::thread process01(subAlign, &aligner, sequences, similarityLimit, i, a, a + l);
-		std::thread process02(subAlign, &aligner, sequences, similarityLimit, i, a + l, a + 2 * l);
-		std::thread process03(subAlign, &aligner, sequences, similarityLimit, i, a + 2 * l, a + 3 * l);
-		std::thread process04(subAlign, &aligner, sequences, similarityLimit, i, a + 3 * l, a + 4 * l);
-		std::thread process05(subAlign, &aligner, sequences, similarityLimit, i, a + 4 * l, a + 5 * l);
-		std::thread process06(subAlign, &aligner, sequences, similarityLimit, i, a + 5 * l, a + 6 * l);
-		std::thread process07(subAlign, &aligner, sequences, similarityLimit, i, a + 6 * l, a + 7 * l);
-		std::thread process08(subAlign, &aligner, sequences, similarityLimit, i, a + 7 * l, a + 8 * l);
-		std::thread process09(subAlign, &aligner, sequences, similarityLimit, i, a + 8 * l, a + 9 * l);
-		std::thread process10(subAlign, &aligner, sequences, similarityLimit, i, a + 9 * l, a + 10 * l);
-		std::thread process11(subAlign, &aligner, sequences, similarityLimit, i, a + 10 * l, a + 11 * l);
-		std::thread process12(subAlign, &aligner, sequences, similarityLimit, i, a + 11 * l, a + 12 * l);
-		std::thread process13(subAlign, &aligner, sequences, similarityLimit, i, a + 12 * l, a + 13 * l);
-		std::thread process14(subAlign, &aligner, sequences, similarityLimit, i, a + 13 * l, a + 14 * l);
-		std::thread process15(subAlign, &aligner, sequences, similarityLimit, i, a + 14 * l, a + 15 * l);
-		std::thread process16(subAlign, &aligner, sequences, similarityLimit, i, a + 15 * l, nbSequences);
-		process01.join();
-		process02.join();
-		process03.join();
-		process04.join();
-		process05.join();
-		process06.join();
-		process07.join();
-		process08.join();
-		process09.join();
-		process10.join();
-		process11.join();
-		process12.join();
-		process13.join();
-		process14.join();
-		process15.join();
-		process16.join();
+		int l = (nbSequences - i - 1) / 4;
+		std::thread process1(sub, sequences, n, similarityLimit, v, i, a, a + l);
+		std::thread process2(sub, sequences, n, similarityLimit, v, i, a + l, a + 2 * l);
+		std::thread process3(sub, sequences, n, similarityLimit, v, i, a + 2 * l, a + 3 * l);
+		std::thread process4(sub, sequences, n, similarityLimit, v, i, a + 3 * l, nbSequences);
+		process1.join();
+		process2.join();
+		process3.join();
+		process4.join();
 		if ((i + 1) % 1000 == 0) {
 			std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;
 			std::cout << "[" << a << " " << l << " " << nbSequences << "]" << std::endl;
