@@ -42,6 +42,43 @@ double batchAlignmentScore(const int* A, const int* B, int rows, int columns, in
 	return totalScore;
 }
 
+struct PixelClass {
+	uint8_t red, green, blue;
+	PixelClass(uint8_t r, uint8_t g, uint8_t b): red(0), green(0), blue(0) {
+		if (r >  g && g == b) {red = 1; green = 0; blue = 0;}
+		else if (g >  r && r == b) {red = 0; green = 1; blue = 0;}
+		else if (b >  r && r == g) {red = 0; green = 0; blue = 1;}
+		else if (r == g && g >  b) {red = 1; green = 1; blue = 0;}
+		else if (r == b && b >  g) {red = 1; green = 0; blue = 1;}
+		else if (g == b && b >  r) {red = 0; green = 1; blue = 1;}
+		else if (r == g && g == b) {red = 0; green = 0; blue = 0;}
+		else if (r >  g && g >  b) {red = 2; green = 1; blue = 0;}
+		else if (r >  b && b >  g) {red = 2; green = 0; blue = 1;}
+		else if (g >  r && r >  b) {red = 1; green = 2; blue = 0;}
+		else if (g >  b && b >  r) {red = 0; green = 2; blue = 1;}
+		else if (b >  r && r >  g) {red = 1; green = 0; blue = 2;}
+		else if (b >  g && g >  r) {red = 0; green = 1; blue = 2;}
+	}
+
+	int distance(const PixelClass& other) {
+		return std::abs(red - other.red) + std::abs(green - other.green) + std::abs(blue - other.blue);
+	}
+
+};
+
+const double MAX_PIXEL_CLASS_DISTANCE = 4;
+const double MAX_PIXEL_DISTANCE = 255 * sqrt(3);
+
+double pixelDistance(int r1, int g1, int b1, int r2, int g2, int b2) {
+	return sqrt((r1 - r2) * (r1 - r2) + (g1 - g2) * (g1 - g2) + (b1 - b2) * (b1 - b2));
+}
+
+double pixelSimilarity(int r1, int g1, int b1, int r2, int g2, int b2) {
+	double dp = pixelDistance(r1, g1, b1, r2, g2, b2);
+	double normalized_dc = PixelClass(r1, g1, b1).distance(PixelClass(r2, g2, b2)) / MAX_PIXEL_CLASS_DISTANCE;
+	return (MAX_PIXEL_DISTANCE - dp * (1 + 3 * normalized_dc) / 4) / MAX_PIXEL_DISTANCE;
+}
+
 struct Aligner {
 	int rows;
 	int columns;
@@ -88,10 +125,45 @@ struct Aligner {
 		return matrix[matrixSize - 1];
 	}
 
+	double computeAlignmentScore(const Sequence* a, const Sequence* b, int rowIndex) {
+		int* rowAR = a->r + rowIndex;
+		int* rowAG = a->g + rowIndex;
+		int* rowAB = a->b + rowIndex;
+		int* rowBR = b->r + rowIndex;
+		int* rowBG = b->g + rowIndex;
+		int* rowBB = b->b + rowIndex;
+		for (int i = 0; i < sideLength; ++i) {
+			matrix[i] = i * gapScore;
+		}
+		for (int i = 1; i < sideLength; ++i) {
+			matrix[i * sideLength] = i * gapScore;
+			for (int j = 1; j < sideLength; ++j) {
+				matrix[i * sideLength + j] = std::max(
+						matrix[(i - 1) * sideLength + (j - 1)] + 2 * pixelSimilarity(
+								rowAR[i - 1], rowAG[i - 1], rowAB[i - 1],
+								rowBR[j - 1], rowBG[j - 1], rowBB[j - 1]
+								) - 1,
+						std::max(
+								matrix[(i - 1) * sideLength + j] + gapScore,
+								matrix[i * sideLength + (j - 1)] + gapScore
+						)
+				);
+			}
+		}
+		return matrix[matrixSize - 1];
+	}
+
 	double computeBatchAlignmentScore(const int* A, const int* B) {
 		double totalScore = 0;
 		for (int i = 0; i < rows; ++i)
 			totalScore += computeAlignmentScore(A + i * columns, B + i * columns);
+		return totalScore;
+	}
+
+	double computeBatchAlignmentScore(const Sequence* a, const Sequence* b) {
+		double totalScore = 0;
+		for (int i = 0; i < rows; ++i)
+			totalScore += computeAlignmentScore(a, b, i * columns);
 		return totalScore;
 	}
 
@@ -100,6 +172,10 @@ struct Aligner {
 		double scoreG = computeBatchAlignmentScore(a->g, b->g);
 		double scoreB = computeBatchAlignmentScore(a->b, b->b);
 		return (scoreR + scoreG + scoreB - 3 * minAlignmentScore) / (3 * alignmentScoreInterval);
+	}
+
+	double align2(const Sequence* a, const Sequence* b) {
+		return (computeBatchAlignmentScore(a, b) - minAlignmentScore) / alignmentScoreInterval;
 	}
 };
 
@@ -176,8 +252,8 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 	alignmentLimit = 0.94;
 	alignmentLimit = 0.91;
 	for (int j = jFrom; j < jTo; ++j) {
-		if (sequences[j]->classification != -1)
-			continue;
+		if (sequences[j]->classification == -1)
+			sequences[j]->classification = j;
 		double score = (
 				uint64_t(3) * n * v
 				- arrayDistance(sequences[i]->r, sequences[j]->r, n)
@@ -185,11 +261,10 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 				- arrayDistance(sequences[i]->b, sequences[j]->b, n)
 				)/ double(3 * n * v);
 		if (score >= similarityLimit) {
-			score = aligner.align(sequences[i], sequences[j]);
+			score = aligner.align2(sequences[i], sequences[j]);
 			if (score >= alignmentLimit) {
-				sequences[j]->classification = i;
+				sequences[j]->classification = sequences[i]->classification;
 				sequences[j]->score = score;
-				// std::cout << i << " " << j << " - " << score << std::endl;
 			}
 		}
 	}
@@ -203,9 +278,8 @@ void classifySimilarities2(Sequence** sequences, int nbSequences, int n, double 
 	}
 	int nbThreads = 4;
 	for (int i = 0; i < nbSequences - 1; ++i) {
-		if (sequences[i]->classification != -1)
-			continue;
-		sequences[i]->classification = i;
+		if (sequences[i]->classification == -1)
+			sequences[i]->classification = i;
 		int a = i + 1;
 		int l = (nbSequences - i - 1) / nbThreads;
 		std::vector<std::thread> processes(nbThreads);
