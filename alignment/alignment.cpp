@@ -262,6 +262,7 @@ void sub(Sequence** sequences, int n, double similarityLimit, int v, int i, int 
 				)/ double(3 * n * v);
 		if (score >= similarityLimit) {
 			score = aligner.align2(sequences[i], sequences[j]);
+			// std::cout << "[" << i << " " << j << "] " << score << std::endl;
 			if (score >= alignmentLimit) {
 				sequences[j]->classification = sequences[i]->classification;
 				sequences[j]->score = score;
