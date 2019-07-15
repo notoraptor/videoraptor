@@ -111,6 +111,6 @@ int main(int lenArgs, char* args[]) {
 	s2.score = 0;
 	s2.classification = -1;
 	std::cout << "aligning ..." << std::endl;
-	classifySimilarities2(ts, 16, 21, 0.5, 255);
+	classifySimilarities(ts, 16, 3, 7, 0.5, 255);
 	return EXIT_SUCCESS;
 }
