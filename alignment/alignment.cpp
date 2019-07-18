@@ -8,6 +8,7 @@
 #include <cstring>
 #include <thread>
 #include <cmath>
+#include <sstream>
 #include "alignment.hpp"
 
 double alignmentScore(std::vector<double>& matrix, const int* a, const int* b, int columns, double interval, int gapScore) {
@@ -82,12 +83,6 @@ inline double moderate(double x, double V, double b) {
 	return (V + b) * x / (x + b);
 }
 
-inline double superModerate(double x, double V, double limit, double b) {
-	if (x <= limit)
-		return (x * x) / V;
-	return moderate(x, V, b);
-}
-
 inline int moderate(int x, int V, int b) {
 	return (V + b) * x / (x + b);
 }
@@ -99,6 +94,39 @@ inline int pixelDistance2(int r1, int g1, int b1, int r2, int g2, int b2) {
 inline int positionDistance2(int x1, int y1, int x2, int y2) {
 	return std::abs(x1 - x2) + std::abs(y1 - y2);
 }
+
+const double V = MAX_PIXEL_DISTANCE;
+const double H = V / 2;
+const double P = V / 4;
+
+struct AlternateModerator {
+	double V;
+	double h;
+	double p;
+	double m;
+	double q;
+	AlternateModerator(double theV, double theH, double theP): V(theV), h(theH), p(theP) {
+		m = V * (V * h + V * p - h * h + p * p) / (2 * V * h + V * p - 2 * h * h);
+		q = m * h / (h + p);
+		if (!(V > 0 && h > 0 && p > 0 && m > 0)) {
+			std::cerr << "[WARNING] V, h, p or m is <= 0. V = " << V << ", h = " << h << ", p = " << p << ", m = " << m << std::endl;
+		}
+	}
+
+	void debug() {
+		std::cout << "[INFO] " << "f(x)=" << m << "(x-" << h << ")/(|x-" << h << "|+" << p << ")+" << q << std::endl;
+	}
+
+	double moderate(double x) const {
+		return m * (x - h) / (std::abs(x - h) + p) + q;
+	}
+
+	double pixelSimilarity(int r1, int g1, int b1, int r2, int g2, int b2) const {
+		double dp = pixelDistance(r1, g1, b1, r2, g2, b2);
+		double normalizedPixelClassDistance = PixelClass(r1, g1, b1).distance(PixelClass(r2, g2, b2)) / MAX_PIXEL_CLASS_DISTANCE;
+		return (MAX_PIXEL_DISTANCE - this->moderate(dp * (1 + normalizedPixelClassDistance) / 2)) / MAX_PIXEL_DISTANCE;
+	}
+};
 
 inline double pixelSimilarity(int r1, int g1, int b1, int r2, int g2, int b2) {
 	 double dp = pixelDistance(r1, g1, b1, r2, g2, b2);
@@ -122,14 +150,16 @@ struct Aligner {
 	int alignmentScoreInterval;
 	int matrixSize;
 	std::vector<double> matrix;
+	AlternateModerator alternateModerator;
 
 	Aligner(int theRows, int theColumns, int theMinVal, int theMaxVal, int theGapScore) :
 			rows(theRows), columns(theColumns), minVal(theMinVal), maxVal(theMaxVal), gapScore(theGapScore),
-			minAlignmentScore(std::min(-1, theGapScore) * theRows * theColumns),
+			minAlignmentScore(std::max(2 * theGapScore, std::min(-1, theGapScore)) * theRows * theColumns),
 			maxAlignmentScore(std::max(+1, theGapScore) * theRows * theColumns),
 			sideLength(theColumns + 1),
 			interval(theMaxVal - theMinVal),
-			matrix() {
+			matrix(),
+			alternateModerator(V, H, P) {
 		alignmentScoreInterval = maxAlignmentScore - minAlignmentScore;
 		matrixSize = sideLength * sideLength;
 		matrix.assign(matrixSize, 0);
@@ -154,7 +184,7 @@ struct Aligner {
 		return matrix[matrixSize - 1];
 	}
 
-	double computeAlignmentScore(const Sequence* a, const Sequence* b, int rowStart) {
+	double computeAlignmentScore(const Sequence* a, const Sequence* b, int start, int step) {
 		for (int i = 0; i < sideLength; ++i) {
 			matrix[i] = i * gapScore;
 		}
@@ -162,9 +192,9 @@ struct Aligner {
 			matrix[i * sideLength] = i * gapScore;
 			for (int j = 1; j < sideLength; ++j) {
 				matrix[i * sideLength + j] = std::max(
-						matrix[(i - 1) * sideLength + (j - 1)] + 2 * pixelSimilarity(
-								*(a->r + rowStart + i - 1), *(a->g + rowStart + i - 1), *(a->b + rowStart + i - 1),
-								*(b->r + rowStart + j - 1), *(b->g + rowStart + j - 1), *(b->b + rowStart + j - 1)
+						matrix[(i - 1) * sideLength + (j - 1)] + 2 * alternateModerator.pixelSimilarity(
+								*(a->r + start + step * (i - 1)), *(a->g + start + step * (i - 1)), *(a->b + start + step * (i - 1)),
+								*(b->r + start + step * (j - 1)), *(b->g + start + step * (j - 1)), *(b->b + start + step * (j - 1))
 								) - 1,
 						std::max(
 								matrix[(i - 1) * sideLength + j] + gapScore,
@@ -183,10 +213,10 @@ struct Aligner {
 		return totalScore;
 	}
 
-	double computeBatchAlignmentScore(const Sequence* a, const Sequence* b) {
+	double computeBatchAlignmentScore(const Sequence* a, const Sequence* b, int nSteps, int leadStep, int cellStep) {
 		double totalScore = 0;
-		for (int i = 0; i < rows; ++i)
-			totalScore += computeAlignmentScore(a, b, i * columns);
+		for (int i = 0; i < nSteps; ++i)
+			totalScore += computeAlignmentScore(a, b, i * leadStep, cellStep);
 		return totalScore;
 	}
 
@@ -198,7 +228,12 @@ struct Aligner {
 	}
 
 	double align2(const Sequence* a, const Sequence* b) {
-		return (computeBatchAlignmentScore(a, b) - minAlignmentScore) / alignmentScoreInterval;
+		/*
+		double scoreRows = (computeBatchAlignmentScore(a, b, rows, columns, 1) - minAlignmentScore) / alignmentScoreInterval;
+		double scoreCols = (computeBatchAlignmentScore(a, b, columns, 1, rows) - minAlignmentScore) / alignmentScoreInterval;
+		return std::max(scoreRows, scoreCols);
+		*/
+		return (computeBatchAlignmentScore(a, b, rows, columns, 1) - minAlignmentScore) / alignmentScoreInterval;
 	}
 };
 
@@ -248,7 +283,7 @@ public:
 };
 
 void sub(Sequence** sequences, int width, int height, double similarityLimit, int v, int i, int jFrom, int jTo) {
-	Aligner aligner(height, width, 0, v, -1);
+	Aligner aligner(height, width, 0, v, 0);
 	RawComparator rawComparator(sequences[i], width, height);
 	double alignmentLimit = similarityLimit;
 	for (int j = jFrom; j < jTo; ++j) {
@@ -267,6 +302,8 @@ void sub(Sequence** sequences, int width, int height, double similarityLimit, in
 
 void classifySimilarities(Sequence** sequences, int nbSequences, int width, int height, double similarityLimit, int v) {
 	std::cout << "STARTING" << std::endl;
+	AlternateModerator alternateModerator(V, H, P);
+	alternateModerator.debug();
 	int nbThreads = 6;
 	for (int i = 0; i < nbSequences - 1; ++i) {
 		int a = i + 1;
@@ -286,4 +323,5 @@ void classifySimilarities(Sequence** sequences, int nbSequences, int width, int 
 				<< " (" << l << " per thread on " << nbThreads << " threads)" << std::endl;
 		}
 	}
+	alternateModerator.debug();
 }
