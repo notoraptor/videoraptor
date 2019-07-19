@@ -228,12 +228,12 @@ struct Aligner {
 	}
 
 	double align2(const Sequence* a, const Sequence* b) {
-		/*
+		///*
 		double scoreRows = (computeBatchAlignmentScore(a, b, rows, columns, 1) - minAlignmentScore) / alignmentScoreInterval;
 		double scoreCols = (computeBatchAlignmentScore(a, b, columns, 1, rows) - minAlignmentScore) / alignmentScoreInterval;
 		return std::max(scoreRows, scoreCols);
-		*/
-		return (computeBatchAlignmentScore(a, b, rows, columns, 1) - minAlignmentScore) / alignmentScoreInterval;
+		//*/
+		// return (computeBatchAlignmentScore(a, b, rows, columns, 1) - minAlignmentScore) / alignmentScoreInterval;
 	}
 };
 
