@@ -79,7 +79,7 @@ inline double positionDistance(double x1, int y1, int x2, int y2) {
 	return sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
 }
 
-inline double moderate(double x, double V, double b) {
+inline double superModerate(double x, double V, double b) {
 	return (V + b) * x / (x + b);
 }
 
@@ -282,29 +282,96 @@ public:
 	}
 };
 
+
+inline int nDigits(int value) {
+	int n = 0;
+	while (value) {
+		value /= 10;
+		++n;
+	}
+	return n;
+}
+
+inline int tenPower(int value) {
+	int n = 1;
+	while (value) {
+		n *= 10;
+		--value;
+	}
+	return n;
+}
+
+inline double squareRoot(int value) {
+	// The Babylonian method for finding square roots by hand (2019/07/22)
+	// https://blogs.sas.com/content/iml/2016/05/16/babylonian-square-roots.html
+	double x = tenPower(nDigits(value) / 2);
+	while (std::abs(value - x * x) >= 0.05) {
+		x = (x + value/x)/2;
+	}
+	return x;
+}
+
+inline double pixelSimilarity(const Sequence* p1, int indexP1, const Sequence* p2, int indexP2) {
+	int dr = p1->r[indexP1] - p2->r[indexP2];
+	int dg = p1->g[indexP1] - p2->g[indexP2];
+	int db = p1->b[indexP1] - p2->b[indexP2];
+	double d = sqrt(dr * dr + dg * dg + db * db);
+	return (MAX_PIXEL_DISTANCE - superModerate(d, MAX_PIXEL_DISTANCE, MAX_PIXEL_DISTANCE / 2)) / MAX_PIXEL_DISTANCE;
+}
+
+inline double compare(const Sequence* p1, const Sequence* p2, int width, int height) {
+	double totalScore = 0;
+	int size = width * height;
+	for (int index = 0; index < size; ++index) {
+		int x = index % width;
+		int y = index / width;
+		int xMin = std::max(0, x - 1);
+		int xMax = std::min(x + 1, width - 1);
+		int yMin = std::max(0, y - 1);
+		int yMax = std::min(y + 1, height - 1);
+		int localWidth = xMax - xMin + 1;
+		int localHeight = yMax - yMin + 1;
+		int localSize = localWidth * localHeight;
+		double score = -1;
+		for (int localIndex = 0; localIndex < localSize; ++localIndex) {
+			score = std::max(score, pixelSimilarity(p1, index, p2, (yMin + localIndex / localWidth) * width + xMin + localIndex % localWidth));
+		}
+		totalScore += score;
+		/*
+		for (int localY = yMin; localY <= yMax; ++localY) {
+			for (int localX = xMin; localX <= xMax; ++localX) {
+				score = std::max(score, pixelSimilarity(p1, x + y * width, p2, localX + localY * width));
+			}
+		}
+		*/
+	}
+	return totalScore / size;
+}
+
 void sub(Sequence** sequences, int width, int height, double similarityLimit, int v, int i, int jFrom, int jTo) {
-	Aligner aligner(height, width, 0, v, 0);
-	RawComparator rawComparator(sequences[i], width, height);
-	double alignmentLimit = similarityLimit;
+	// Aligner aligner(height, width, 0, v, 0);
+	// double alignmentLimit = similarityLimit;
 	for (int j = jFrom; j < jTo; ++j) {
-		double score = rawComparator.similarity(sequences[j]);
-//		std::cout << "D [" << i << " " << j << "] " << score << std::endl;
+		double score = compare(sequences[i], sequences[j], width, height);
+		// std::cout << "D [" << i << " " << j << "] " << score << std::endl;
 		if (score >= similarityLimit) {
+			sequences[j]->classification = sequences[i]->classification;
+			sequences[j]->score = score;
+			/*
 			score = aligner.align2(sequences[i], sequences[j]);
-//			std::cout << "\tS [" << i << " " << j << "] " << score << std::endl;
+			std::cout << "\tS [" << i << " " << j << "] " << score << std::endl;
 			if (score >= alignmentLimit) {
 				sequences[j]->classification = sequences[i]->classification;
 				sequences[j]->score = score;
 			}
+			*/
 		}
 	}
 }
 
 void classifySimilarities(Sequence** sequences, int nbSequences, int width, int height, double similarityLimit, int v) {
 	std::cout << "STARTING" << std::endl;
-	AlternateModerator alternateModerator(V, H, P);
-	alternateModerator.debug();
-	int nbThreads = 6;
+	int nbThreads = 8;
 	for (int i = 0; i < nbSequences - 1; ++i) {
 		int a = i + 1;
 		int l = (nbSequences - i - 1) / nbThreads;
@@ -323,5 +390,4 @@ void classifySimilarities(Sequence** sequences, int nbSequences, int width, int 
 				<< " (" << l << " per thread on " << nbThreads << " threads)" << std::endl;
 		}
 	}
-	alternateModerator.debug();
 }
