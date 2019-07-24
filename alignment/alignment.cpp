@@ -102,8 +102,8 @@ inline double compare(const Sequence* p1, const Sequence* p2, int width, int hei
 			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 1, height - 1, width),
 			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 2, height - 2, width),
 			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 1, height - 2, width));
+	// x, 0
 	for (int x = 1; x <= width - 2; ++x) {
-		// x, 0
 		totalScore += getMax(
 				PIXEL_SIMILARITY(p1, x, 0, p2, x - 1, 0, width),
 				PIXEL_SIMILARITY(p1, x, 0, p2, x, 0, width),
@@ -111,7 +111,9 @@ inline double compare(const Sequence* p1, const Sequence* p2, int width, int hei
 				PIXEL_SIMILARITY(p1, x, 0, p2, x - 1, 1, width),
 				PIXEL_SIMILARITY(p1, x, 0, p2, x, 1, width),
 				PIXEL_SIMILARITY(p1, x, 0, p2, x + 1, 1, width));
-		// x, height - 1
+	}
+	// x, height - 1
+	for (int x = 1; x <= width - 2; ++x) {
 		totalScore += getMax(
 				PIXEL_SIMILARITY(p1, x, height - 1, p2, x - 1, height - 1, width),
 				PIXEL_SIMILARITY(p1, x, height - 1, p2, x, height - 1, width),
