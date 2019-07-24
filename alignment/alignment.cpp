@@ -45,19 +45,15 @@ double batchAlignmentScore(const int* A, const int* B, int rows, int columns, in
 
 const int SIMPLE_MAX_PIXEL_DISTANCE = 255 * 3;
 const int V = SIMPLE_MAX_PIXEL_DISTANCE;
-const double B = SIMPLE_MAX_PIXEL_DISTANCE / 2.0;
+const double B = V / 2.0;
 const double V_PLUS_B = V + B;
 
-inline double superModerate(double x, double v, double b) {
-	return (v + b) * x / (x + b);
-}
-
-inline double fastSuperModerate(double x) {
+inline double moderate(double x) {
 	return V_PLUS_B * x / (x  + B);
 }
 
 inline double pixelSimilarity(const Sequence* p1, int indexP1, const Sequence* p2, int indexP2) {
-	return (SIMPLE_MAX_PIXEL_DISTANCE - fastSuperModerate(
+	return (SIMPLE_MAX_PIXEL_DISTANCE - moderate(
 			std::abs(p1->r[indexP1] - p2->r[indexP2])
 			+ std::abs(p1->g[indexP1] - p2->g[indexP2])
 			+ std::abs(p1->b[indexP1] - p2->b[indexP2])
@@ -158,23 +154,6 @@ inline double compare(const Sequence* p1, const Sequence* p2, int width, int hei
 				PIXEL_SIMILARITY(p1, x, y, p2, x, y + 1, width),
 				PIXEL_SIMILARITY(p1, x, y, p2, x + 1, y + 1, width));
 	}
-	/*
-	for (int index = 0; index < size; ++index) {
-		int x = index % width;
-		int y = index / width;
-		int xMin = std::max(0, x - 1);
-		int xMax = std::min(x + 1, width - 1);
-		int yMin = std::max(0, y - 1);
-		int yMax = std::min(y + 1, height - 1);
-		double score = -1;
-		for (int localY = yMin; localY <= yMax; ++localY) {
-			for (int localX = xMin; localX <= xMax; ++localX) {
-				score = std::max(score, pixelSimilarity(p1, x + y * width, p2, localX + localY * width));
-			}
-		}
-		totalScore += score;
-	}
-	*/
 	return totalScore / size;
 }
 
