@@ -50,14 +50,6 @@ inline double moderate(double x) {
 	return V_PLUS_B * x / (x  + B);
 }
 
-inline double pixelSimilarity(const Sequence* p1, int indexP1, const Sequence* p2, int indexP2) {
-	return (SIMPLE_MAX_PIXEL_DISTANCE - moderate(
-			std::abs(p1->r[indexP1] - p2->r[indexP2])
-			+ std::abs(p1->g[indexP1] - p2->g[indexP2])
-			+ std::abs(p1->b[indexP1] - p2->b[indexP2])
-			)) / SIMPLE_MAX_PIXEL_DISTANCE;
-}
-
 inline double pixelDistance(const Sequence* p1, int indexP1, const Sequence* p2, int indexP2) {
 	return moderate(
 			std::abs(p1->r[indexP1] - p2->r[indexP2])
@@ -65,11 +57,10 @@ inline double pixelDistance(const Sequence* p1, int indexP1, const Sequence* p2,
 			+ std::abs(p1->b[indexP1] - p2->b[indexP2]));
 }
 
-#define PIXEL_SIMILARITY(p1, x, y, p2, localX, localY, width) pixelSimilarity(p1, (x) + (y) * (width), p2, (localX) + (localY) * (width))
 #define PIXEL_DISTANCE(p1, x, y, p2, localX, localY, width) pixelDistance(p1, (x) + (y) * (width), p2, (localX) + (localY) * (width))
 
 template <typename T>
-T getMin(T t1, T t2, T t3, T t4, T t5 = -1, T t6 = -1, T t7 = -1, T t8 = -1, T t9 = -1) {
+T getMin(T t1, T t2, T t3, T t4, T t5 = V, T t6 = V, T t7 = V, T t8 = V, T t9 = V) {
 	T val = t1;
 	if (val > t2) val = t2;
 	if (val > t3) val = t3;
@@ -80,103 +71,6 @@ T getMin(T t1, T t2, T t3, T t4, T t5 = -1, T t6 = -1, T t7 = -1, T t8 = -1, T t
 	if (val > t8) val = t8;
 	if (val > t9) val = t9;
 	return val;
-}
-
-template <typename T>
-T getMax(T t1, T t2, T t3, T t4, T t5 = -1, T t6 = -1, T t7 = -1, T t8 = -1, T t9 = -1) {
-	T val = t1;
-	if (val < t2) val = t2;
-	if (val < t3) val = t3;
-	if (val < t4) val = t4;
-	if (val < t5) val = t5;
-	if (val < t6) val = t6;
-	if (val < t7) val = t7;
-	if (val < t8) val = t8;
-	if (val < t9) val = t9;
-	return val;
-}
-
-inline double compare(const Sequence* p1, const Sequence* p2, int width, int height, int size) {
-	// x, y:
-	// 0, 0
-	double totalScore = getMax(
-			PIXEL_SIMILARITY(p1, 0 ,0, p2, 0, 0, width),
-			PIXEL_SIMILARITY(p1, 0 ,0, p2, 1, 0, width),
-			PIXEL_SIMILARITY(p1, 0 ,0, p2, 0, 1, width),
-			PIXEL_SIMILARITY(p1, 0 ,0, p2, 1, 1, width));
-	// width - 1, 0
-	totalScore += getMax(
-			PIXEL_SIMILARITY(p1, width - 1, 0, p2, width - 2, 0, width),
-			PIXEL_SIMILARITY(p1, width - 1, 0, p2, width - 1, 0, width),
-			PIXEL_SIMILARITY(p1, width - 1, 0, p2, width - 2, 1, width),
-			PIXEL_SIMILARITY(p1, width - 1, 0, p2, width - 1, 1, width));
-	// 0, height - 1
-	totalScore += getMax(
-			PIXEL_SIMILARITY(p1, 0, height - 1, p2, 0, height - 1, width),
-			PIXEL_SIMILARITY(p1, 0, height - 1, p2, 1, height - 1, width),
-			PIXEL_SIMILARITY(p1, 0, height - 1, p2, 0, height - 2, width),
-			PIXEL_SIMILARITY(p1, 0, height - 1, p2, 1, height - 2, width));
-	// width - 1, height - 1
-	totalScore += getMax(
-			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 2, height - 1, width),
-			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 1, height - 1, width),
-			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 2, height - 2, width),
-			PIXEL_SIMILARITY(p1, width - 1, height - 1, p2, width - 1, height - 2, width));
-	// x, 0
-	for (int x = 1; x <= width - 2; ++x) {
-		totalScore += getMax(
-				PIXEL_SIMILARITY(p1, x, 0, p2, x - 1, 0, width),
-				PIXEL_SIMILARITY(p1, x, 0, p2, x, 0, width),
-				PIXEL_SIMILARITY(p1, x, 0, p2, x + 1, 0, width),
-				PIXEL_SIMILARITY(p1, x, 0, p2, x - 1, 1, width),
-				PIXEL_SIMILARITY(p1, x, 0, p2, x, 1, width),
-				PIXEL_SIMILARITY(p1, x, 0, p2, x + 1, 1, width));
-	}
-	// x, height - 1
-	for (int x = 1; x <= width - 2; ++x) {
-		totalScore += getMax(
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x - 1, height - 1, width),
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x, height - 1, width),
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x + 1, height - 1, width),
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x - 1, height - 2, width),
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x, height - 2, width),
-				PIXEL_SIMILARITY(p1, x, height - 1, p2, x + 1, height - 2, width));
-	}
-	for (int y = 1; y <= height - 2; ++y) {
-		// 0, y
-		totalScore += getMax(
-				PIXEL_SIMILARITY(p1, 0, y, p2, 0, y - 1, width),
-				PIXEL_SIMILARITY(p1, 0, y, p2, 1, y - 1, width),
-				PIXEL_SIMILARITY(p1, 0, y, p2, 0, y, width),
-				PIXEL_SIMILARITY(p1, 0, y, p2, 1, y, width),
-				PIXEL_SIMILARITY(p1, 0, y, p2, 0, y + 1, width),
-				PIXEL_SIMILARITY(p1, 0, y, p2, 1, y + 1, width));
-		// width - 1, y
-		totalScore += getMax(
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 2, y - 1, width),
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 1, y - 1, width),
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 2, y, width),
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 1, y, width),
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 2, y + 1, width),
-				PIXEL_SIMILARITY(p1, width - 1, y, p2, width - 1, y + 1, width));
-	}
-	// x in [1; width - 2], y in [1; height - 2]
-	int remainingSize = (width - 2) * (height - 2);
-	for (int index = 0; index < remainingSize; ++index) {
-		int x = index % (width - 2) + 1;
-		int y = index / (width - 2) + 1;
-		totalScore += getMax(
-				PIXEL_SIMILARITY(p1, x, y, p2, x - 1, y - 1, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x, y - 1, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x + 1, y - 1, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x - 1, y, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x, y, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x + 1, y, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x - 1, y + 1, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x, y + 1, width),
-				PIXEL_SIMILARITY(p1, x, y, p2, x + 1, y + 1, width));
-	}
-	return totalScore / size;
 }
 
 inline double compareFaster(const Sequence* p1, const Sequence* p2, int width, int height, int maximumSimilarityScore) {
@@ -262,10 +156,10 @@ inline double compareFaster(const Sequence* p1, const Sequence* p2, int width, i
 	return (maximumSimilarityScore - totalDistance) / maximumSimilarityScore;
 }
 
-void sub(Sequence** sequences, int width, int height, int size, double similarityLimit, int i, int jFrom, int jTo) {
-	#pragma omp parallel for default(none) shared(sequences, i, jFrom, jTo, width, height, size, similarityLimit)
+void sub(Sequence** sequences, int width, int height, int maximumSimilarityScore, double similarityLimit, int i, int jFrom, int jTo) {
+	#pragma omp parallel for default(none) shared(sequences, i, jFrom, jTo, width, height, maximumSimilarityScore, similarityLimit)
 	for (int j = jFrom; j < jTo; ++j) {
-		double score = compare(sequences[i], sequences[j], width, height, size);
+		double score = compareFaster(sequences[i], sequences[j], width, height, maximumSimilarityScore);
 		if (score >= similarityLimit) {
 			sequences[j]->classification = sequences[i]->classification;
 			sequences[j]->score = score;
