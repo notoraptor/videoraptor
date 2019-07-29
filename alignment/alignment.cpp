@@ -60,7 +60,27 @@ inline double pixelDistance(const Sequence* p1, int indexP1, const Sequence* p2,
 #define PIXEL_DISTANCE(p1, x, y, p2, localX, localY, width) pixelDistance(p1, (x) + (y) * (width), p2, (localX) + (localY) * (width))
 
 template <typename T>
-T getMin(T t1, T t2, T t3, T t4, T t5 = V, T t6 = V, T t7 = V, T t8 = V, T t9 = V) {
+inline T getMin(T t1, T t2, T t3, T t4) {
+	T val = t1;
+	if (val > t2) val = t2;
+	if (val > t3) val = t3;
+	if (val > t4) val = t4;
+	return val;
+}
+
+template <typename T>
+inline T getMin(T t1, T t2, T t3, T t4, T t5, T t6) {
+	T val = t1;
+	if (val > t2) val = t2;
+	if (val > t3) val = t3;
+	if (val > t4) val = t4;
+	if (val > t5) val = t5;
+	if (val > t6) val = t6;
+	return val;
+}
+
+template <typename T>
+inline T getMin(T t1, T t2, T t3, T t4, T t5, T t6, T t7, T t8, T t9) {
 	T val = t1;
 	if (val > t2) val = t2;
 	if (val > t3) val = t3;
@@ -154,17 +174,6 @@ inline double compareFaster(const Sequence* p1, const Sequence* p2, int width, i
 				PIXEL_DISTANCE(p1, x, y, p2, x + 1, y + 1, width));
 	}
 	return (maximumSimilarityScore - totalDistance) / maximumSimilarityScore;
-}
-
-void sub(Sequence** sequences, int width, int height, int maximumSimilarityScore, double similarityLimit, int i, int jFrom, int jTo) {
-	#pragma omp parallel for default(none) shared(sequences, i, jFrom, jTo, width, height, maximumSimilarityScore, similarityLimit)
-	for (int j = jFrom; j < jTo; ++j) {
-		double score = compareFaster(sequences[i], sequences[j], width, height, maximumSimilarityScore);
-		if (score >= similarityLimit) {
-			sequences[j]->classification = sequences[i]->classification;
-			sequences[j]->score = score;
-		}
-	}
 }
 
 void classifySimilarities(Sequence** sequences, int nbSequences, int width, int height, double similarityLimit, int v) {
