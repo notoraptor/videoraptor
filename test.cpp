@@ -98,19 +98,6 @@ void printVideoRaptorInfo() {
 	VideoRaptorInfo_clear(&videoRaptorInfo);
 }
 
-int main(int lenArgs, char* args[]) {
-	int t1[] = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3};
-	int t2[] = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3};
-	Sequence s1;
-	Sequence s2;
-	Sequence* ts[] = {&s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2, &s1, &s2};
-	s1.i = t1;
-	s1.score = 0;
-	s1.classification = -1;
-	s2.i = t2;
-	s2.score = 0;
-	s2.classification = -1;
-	std::cout << "aligning ..." << std::endl;
-	classifySimilarities(ts, 16, 3, 7, 0.5, 255);
+int main() {
 	return EXIT_SUCCESS;
 }

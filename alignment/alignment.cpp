@@ -176,17 +176,13 @@ inline double compareFaster(const Sequence* p1, const Sequence* p2, int width, i
 	return (maximumSimilarityScore - totalDistance) / maximumSimilarityScore;
 }
 
-void classifySimilarities(Sequence** sequences, int nbSequences, int width, int height, double similarityLimit, int v) {
+void classifySimilarities(Sequence** sequences, int nbSequences, int width, int height, double* edges) {
 	std::cout << "STARTING" << std::endl;
 	int maximumSimilarityScore = SIMPLE_MAX_PIXEL_DISTANCE * width * height;
 	for (int i = 0; i < nbSequences - 1; ++i) {
-		#pragma omp parallel for default(none) shared(sequences, i, nbSequences, width, height, similarityLimit, maximumSimilarityScore)
+		#pragma omp parallel for default(none) shared(sequences, i, nbSequences, width, height, maximumSimilarityScore, edges)
 		for (int j = i + 1; j < nbSequences; ++j) {
-			double score = compareFaster(sequences[i], sequences[j], width, height, maximumSimilarityScore);
-			if (score >= similarityLimit) {
-				sequences[j]->classification = sequences[i]->classification;
-				sequences[j]->score = score;
-			}
+			edges[i * nbSequences + j] = compareFaster(sequences[i], sequences[j], width, height, maximumSimilarityScore);
 		}
 		if ((i + 1) % 100 == 0) {
 			std::cout << "(*) Image " << i + 1 << " / " << nbSequences << std::endl;

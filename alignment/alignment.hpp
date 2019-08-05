@@ -19,7 +19,7 @@ extern "C" {
 	double batchAlignmentScore(
 			const int* A, const int* B, int rows, int columns, int minVal, int maxVal, int gapScore);
 	void classifySimilarities(
-			Sequence** sequences, int nbSequences, int width, int height, double similarityLimit, int lenInterval);
+			Sequence** sequences, int nbSequences, int width, int height, double* edges);
 };
 
 #endif //VIDEORAPTOR_ALIGNMENT_HPP
