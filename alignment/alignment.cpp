@@ -180,7 +180,7 @@ void classifySimilarities(
 	iTo = std::min(iTo, nbSequences);
 	int maximumSimilarityScore = SIMPLE_MAX_PIXEL_DISTANCE * width * height;
 	for (int i = iFrom; i < iTo; ++i) {
-		#pragma omp parallel for default(none) shared(sequences, i, nbSequences, width, height, maximumSimilarityScore, edges) num_threads(1 + 3 * omp_get_num_procs() / 4)
+		#pragma omp parallel for default(none) shared(sequences, i, nbSequences, width, height, maximumSimilarityScore, edges)
 		for (int j = i + 1; j < nbSequences; ++j) {
 			edges[i * nbSequences + j] = compareFaster(sequences[i], sequences[j], width, height, maximumSimilarityScore);
 		}
