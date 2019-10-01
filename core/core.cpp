@@ -57,7 +57,7 @@ void ErrorReader_init(ErrorReader* errorReader, unsigned int errors) {
 	errorReader->position = 0;
 }
 
-const char* ErrorReader_next(ErrorReader * errorReader) {
+const char* ErrorReader_next(ErrorReader* errorReader) {
 	while (errorReader->errors) {
 		bool hasRest = errorReader->errors % 2;
 		errorReader->errors /= 2;
